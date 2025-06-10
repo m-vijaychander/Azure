@@ -119,11 +119,12 @@ def scan_worker(namespace):
                 cmd = ["trivy", "image", "--quiet", "--format", "json", image]
                 print(f"DEBUG: Running command: {' '.join(cmd)}")
                 
+                # FIXED: Use universal_newlines=True instead of text=True for Python 3.6
                 result = subprocess.run(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    universal_newlines=True,  # Changed from text=True
                     timeout=300,
                     check=False  # Don't raise exception on non-zero exit
                 )
@@ -383,11 +384,12 @@ def debug_namespace(namespace):
         if images:
             test_image = images[0]
             try:
+                # FIXED: Use universal_newlines=True instead of text=True for Python 3.6
                 result = subprocess.run(
                     ["trivy", "image", "--format", "json", test_image],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    universal_newlines=True,  # Changed from text=True
                     timeout=60
                 )
                 trivy_test = {
@@ -425,12 +427,13 @@ def debug_namespace(namespace):
 def test_trivy():
     """Test trivy installation and basic functionality"""
     try:
+        # FIXED: Use universal_newlines=True instead of text=True for Python 3.6
         # Test trivy version
         version_result = subprocess.run(
             ["trivy", "--version"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            universal_newlines=True,  # Changed from text=True
             timeout=10
         )
         
@@ -439,7 +442,7 @@ def test_trivy():
             ["trivy", "image", "--format", "json", "alpine:latest"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            universal_newlines=True,  # Changed from text=True
             timeout=60
         )
         
