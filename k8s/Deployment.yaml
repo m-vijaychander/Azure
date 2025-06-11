@@ -42,6 +42,29 @@ spec:
           
           # Test Trivy installation
           trivy --version
+
+                   # Setup ACR authentication without Docker
+          echo "🔐 Setting up ACR authentication (Docker-free)..."
+          
+          echo "✅ Managed identity authentication successful"
+            
+          ACR_TOKEN=$(az acr login --name "$ACR_REGISTRY_NAME" --expose-token --output tsv --query accessToken 2>/dev/null)
+              
+          echo "✅ ACR access token obtained successfully"
+                
+          # Set up environment for Trivy to use the token
+          export TRIVY_USERNAME="00000000-0000-0000-0000-000000000000"
+          export TRIVY_PASSWORD="$ACR_TOKEN"
+                
+          # Create Trivy config for ACR authentication
+          mkdir -p ~/.config/trivy
+          cat > ~/.config/trivy/config.yaml << EOF
+registry:
+  "${ACR_REGISTRY_NAME}.azurecr.io":
+    username: "00000000-0000-0000-0000-000000000000"
+    password: "$ACR_TOKEN"
+EOF
+                echo "✅ Trivy ACR authentication configured"
  
           # Create templates directory in writable location and copy HTML files
           echo "📁 Setting up templates..."
