@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanning {{ namespace }} - Trivy Scanner</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .namespace-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+        }
+
+        .header-info h1 {
+            font-size: 1.8rem;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .header-info p {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .progress-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .progress-header h2 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-scanning {
+            background: #fff3cd;
+            color: #856404;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #856404;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .progress-bar-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(45deg, #28a745, #20c997);
+            border-radius: 10px;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid #e9ecef;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .log-section {
+            background: #1a1a1a;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .log-header {
+            background: #333;
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-header h3 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .log-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .log-btn {
+            background: #495057;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background 0.2s;
+        }
+
+        .log-btn:hover {
+            background: #6c757d;
+        }
+
+        .log-container {
+            height: 500px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .log-timestamp {
+            color: #888;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            min-width: 80px;
+        }
+
+        .log-level {
+            font-weight: bold;
+            min-width: 60px;
+            text-align: center;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+        }
+
+        .log-INFO { background: #17a2b8; color: white; }
+        .log-SUCCESS { background: #28a745; color: white; }
+        .log-WARNING { background: #ffc107; color: #212529; }
+        .log-ERROR { background: #dc3545; color: white; }
+
+        .log-message {
+            flex: 1;
+            word-break: break-word;
+        }
+
+        .completion-banner {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+        }
+
+        .completion-banner.show {
+            display: block;
+            animation: slideIn 0.5s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .auto-scroll {
+            background: #28a745;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .header {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .progress-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .log-container {
+                height: 400px;
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <div class="namespace-icon">
+                    <i class="fas fa-cube"></i>
+                </div>
+                <div class="header-info">
+                    <h1>{{ namespace }}</h1>
+                    <p>Security Vulnerability Scan</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <a href="/results/{{ namespace }}" class="btn btn-primary">
+                    <i class="fas fa-chart-bar"></i> View Results
+                </a>
+                <a href="/" class="btn btn-secondary">
+                    <i class="fas fa-home"></i> Home
+                </a>
+            </div>
+        </div>
+
+        <div class="completion-banner" id="completionBanner">
+            <h3><i class="fas fa-check-circle"></i> Scan Completed Successfully!</h3>
+            <p>Click "View Results" to see the vulnerability report</p>
+        </div>
+
+        <div class="progress-section">
+            <div class="progress-header">
+                <h2><i class="fas fa-tasks"></i> Scan Progress</h2>
+                <div class="status-badge" id="statusBadge">
+                    {% if scanning %}
+                        <div class="status-scanning">
+                            <div class="spinner"></div>
+                            Scanning
+                        </div>
+                    {% else %}
+                        <div class="status-completed">Completed</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar" style="width: 0%">0%</div>
+            </div>
+
+            <div class="progress-stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalImages">{{ metadata.get('total_images', 0) }}</div>
+                    <div class="stat-label">Total Images</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="scannedImages">{{ metadata.get('scanned_images', 0) }}</div>
+                    <div class="stat-label">Scanned</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="failedImages">{{ metadata.get('failed_images', 0) }}</div>
+                    <div class="stat-label">Failed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="logCount">0</div>
+                    <div class="stat-label">Log Entries</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="log-section">
+            <div class="log-header">
+                <h3><i class="fas fa-terminal"></i> Scan Logs</h3>
+                <div class="log-controls">
+                    <button class="log-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">
+                        <i class="fas fa-arrow-down"></i> Auto Scroll: ON
+                    </button>
+                    <button class="log-btn" onclick="clearLogs()">
+                        <i class="fas fa-trash"></i> Clear
+                    </button>
+                </div>
+            </div>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry">
+                    <span class="log-timestamp">--:--:--</span>
+                    <span class="log-level log-INFO">INFO</span>
+                    <span class="log-message">Initializing scan for namespace: {{ namespace }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let autoScroll = true;
+        let logCount = 0;
+        let isScanning = {{ 'true' if scanning else 'false' }};
+
+        const logContainer = document.getElementById('logContainer');
+        const autoScrollBtn = document.getElementById('autoScrollBtn');
+        const statusBadge = document.getElementById('statusBadge');
+        const progressBar = document.getElementById('progressBar');
+        const completionBanner = document.getElementById('completionBanner');
+
+        // Connect to log stream
+        const source = new EventSource('/logs/{{ namespace }}');
+
+        source.onmessage = function(event) {
+            try {
+                const logData = JSON.parse(event.data);
+                
+                if (logData.type === 'complete') {
+                    handleScanComplete();
+                    return;
+                }
+
+                addLogEntry(logData);
+                updateStats();
+                
+            } catch (e) {
+                // Handle legacy log format (plain text)
+                addLegacyLogEntry(event.data);
+            }
+        };
+
+        source.onerror = function() {
+            if (isScanning) {
+                // Try to reconnect after 5 seconds
+                setTimeout(() => {
+                    location.reload();
+                }, 5000);
+            }
+        };
+
+        function addLogEntry(logData) {
+            const timestamp = new Date(logData.timestamp).toLocaleTimeString();
+            const level = logData.level || 'INFO';
+            const message = logData.message || '';
+
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `
+                <span class="log-timestamp">${timestamp}</span>
+                <span class="log-level log-${level}">${level}</span>
+                <span class="log-message">${message}</span>
+            `;
+
+            logContainer.appendChild(logEntry);
+            logCount++;
+
+            if (autoScroll) {
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+        function addLegacyLogEntry(message) {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `
+                <span class="log-timestamp">${new Date().toLocaleTimeString()}</span>
+                <span class="log-level log-INFO">INFO</span>
+                <span class="log-message">${message}</span>
+            `;
+
+            logContainer.appendChild(logEntry);
+            logCount++;
+
+            if (autoScroll) {
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+        function updateStats() {
+            // Fetch current scan status
+            fetch(`/api/scan-status/{{ namespace }}`)
+                .then(response => response.json())
+                .then(data => {
+                    const metadata = data.metadata || {};
+                    const totalImages = metadata.total_images || 0;
+                    const scannedImages = metadata.scanned_images || 0;
+                    const failedImages = metadata.failed_images || 0;
+
+                    document.getElementById('totalImages').textContent = totalImages;
+                    document.getElementById('scannedImages').textContent = scannedImages;
+                    document.getElementById('failedImages').textContent = failedImages;
+                    document.getElementById('logCount').textContent = logCount;
+
+                    // Update progress bar
+                    if (totalImages > 0) {
+                        const progress = (scannedImages / totalImages) * 100;
+                        progressBar.style.width = progress + '%';
+                        progressBar.textContent = Math.round(progress) + '%';
+                    }
+
+                    // Update scanning status
+                    isScanning = data.scanning;
+                    if (!isScanning && metadata.status === 'completed') {
+                        handleScanComplete();
+                    }
+                })
+                .catch(console.error);
+        }
+
+        function handleScanComplete() {
+            isScanning = false;
+            source.close();
+            
+            statusBadge.innerHTML = '<div class="status-completed">Completed</div>';
+            completionBanner.classList.add('show');
+            
+            // Auto-redirect to results after 3 seconds
+            setTimeout(() => {
+                window.location.href = '/results/{{ namespace }}';
+            }, 3000);
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            autoScrollBtn.innerHTML = autoScroll 
+                ? '<i class="fas fa-arrow-down"></i> Auto Scroll: ON'
+                : '<i class="fas fa-pause"></i> Auto Scroll: OFF';
+            autoScrollBtn.className = autoScroll ? 'log-btn auto-scroll' : 'log-btn';
+        }
+
+        function clearLogs() {
+            logContainer.innerHTML = '';
+            logCount = 0;
+            document.getElementById('logCount').textContent = '0';
+        }
+
+        // Update stats every 2 seconds
+        setInterval(updateStats, 2000);
+
+        // Initial stats update
+        updateStats();
+    </script>
+</body>
+</html>
