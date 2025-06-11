@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-app-config
+  namespace: trivy-scanner
+data:
+  FLASK_ENV: "production"
+  FLASK_DEBUG: "false"
+  TRIVY_CACHE_DIR: "/tmp/trivy-cache"
+  TRIVY_DB_REPOSITORY: "ghcr.io/aquasecurity/trivy-db"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-requirements
+  namespace: trivy-scanner
+data:
+  requirements.txt: |
+    Flask==2.3.3
+    kubernetes==27.2.0
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-startup-script
+  namespace: trivy-scanner
+data:
+  startup.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "Installing Trivy..."
+    apt-get update
+    apt-get install -y curl wget gnupg lsb-release apt-transport-https ca-certificates
+    
+    # Install Trivy
+    wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add -
+    echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee -a /etc/apt/sources.list.d/trivy.list
+    apt-get update
+    apt-get install -y trivy
+    
+    echo "Installing Python dependencies..."
+    pip install --no-cache-dir -r /app/requirements.txt
+    
+    echo "Starting application..."
+    cd /app
+    exec python trivy.py

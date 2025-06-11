@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trivy-scanner
+  namespace: trivy-scanner
+  labels:
+    app: trivy-scanner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trivy-scanner
+  template:
+    metadata:
+      labels:
+        app: trivy-scanner
+    spec:
+      serviceAccountName: trivy-scanner
+      securityContext:
+        runAsNonRoot: false  # Need root to install packages
+        fsGroup: 1000
+      initContainers:
+      - name: setup
+        image: python:3.9-slim
+        command: ["/bin/bash", "/scripts/startup.sh"]
+        volumeMounts:
+        - name: startup-script
+          mountPath: /scripts
+        - name: app-code
+          mountPath: /app/trivy.py
+          subPath: trivy.py
+        - name: requirements
+          mountPath: /app/requirements.txt
+          subPath: requirements.txt
+        - name: shared-data
+          mountPath: /shared
+        securityContext:
+          runAsUser: 0  # Need root for package installation
+      containers:
+      - name: trivy-scanner
+        image: python:3.9-slim
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          # Copy installed packages from init container
+          if [ -d /shared/usr ]; then
+            cp -r /shared/usr/* /usr/
+          fi
+          
+          # Install Python dependencies if not already installed
+          pip install --no-cache-dir -r /app/requirements.txt
+          
+          # Start the application
+          cd /app
+          exec python trivy.py
+        ports:
+        - containerPort: 5000
+          name: http
+        env:
+        - name: FLASK_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: trivy-app-config
+              key: FLASK_ENV
+        - name: FLASK_DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: trivy-app-config
+              key: FLASK_DEBUG
+        - name: TRIVY_CACHE_DIR
+          valueFrom:
+            configMapKeyRef:
+              name: trivy-app-config
+              key: TRIVY_CACHE_DIR
+        - name: TRIVY_DB_REPOSITORY
+          valueFrom:
+            configMapKeyRef:
+              name: trivy-app-config
+              key: TRIVY_DB_REPOSITORY
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: app-code
+          mountPath: /app/trivy.py
+          subPath: trivy.py
+        - name: templates
+          mountPath: /app/templates
+        - name: requirements
+          mountPath: /app/requirements.txt
+          subPath: requirements.txt
+        - name: trivy-cache
+          mountPath: /tmp/trivy-cache
+        - name: shared-data
+          mountPath: /shared
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_RAW  # Required for network operations
+      volumes:
+      - name: app-code
+        configMap:
+          name: trivy-app-code
+          defaultMode: 0755
+      - name: templates
+        configMap:
+          name: trivy-templates
+          defaultMode: 0644
+      - name: requirements
+        configMap:
+          name: trivy-requirements
+          defaultMode: 0644
+      - name: startup-script
+        configMap:
+          name: trivy-startup-script
+          defaultMode: 0755
+      - name: trivy-cache
+        emptyDir: {}
+      - name: shared-data
+        emptyDir: {}
+      restartPolicy: Always

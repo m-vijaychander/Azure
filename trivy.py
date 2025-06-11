@@ -9,14 +9,22 @@ from flask import Flask, render_template, request, Response, redirect, url_for, 
 
 app = Flask(__name__)
 
-# Load Kubernetes config
+# Load Kubernetes config - Updated for in-cluster configuration
 try:
-    config.load_kube_config()
+    # Try in-cluster config first (when running in Kubernetes)
+    config.load_incluster_config()
     v1 = client.CoreV1Api()
-    print("✅ Successfully loaded Kubernetes config")
+    print("✅ Successfully loaded in-cluster Kubernetes config")
 except Exception as e:
-    print(f"❌ Failed to load Kubernetes config: {e}")
-    exit(1)
+    try:
+        # Fallback to local kubeconfig (for development)
+        config.load_kube_config()
+        v1 = client.CoreV1Api()
+        print("✅ Successfully loaded local Kubernetes config")
+    except Exception as e2:
+        print(f"❌ Failed to load Kubernetes config: {e2}")
+        print(f"❌ In-cluster config error: {e}")
+        exit(1)
 
 # Enhanced data structures
 scan_results_by_namespace = {}
@@ -119,12 +127,12 @@ def scan_worker(namespace):
                 cmd = ["trivy", "image", "--quiet", "--format", "json", image]
                 print(f"DEBUG: Running command: {' '.join(cmd)}")
                 
-                # FIXED: Use universal_newlines=True instead of text=True for Python 3.6
+                # Use universal_newlines=True for Python 3.6+ compatibility
                 result = subprocess.run(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    universal_newlines=True,  # Changed from text=True
+                    universal_newlines=True,
                     timeout=300,
                     check=False  # Don't raise exception on non-zero exit
                 )
@@ -265,6 +273,7 @@ def scan_worker(namespace):
             'message': final_msg
         })
 
+# Rest of the Flask routes remain the same...
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
@@ -384,12 +393,11 @@ def debug_namespace(namespace):
         if images:
             test_image = images[0]
             try:
-                # FIXED: Use universal_newlines=True instead of text=True for Python 3.6
                 result = subprocess.run(
                     ["trivy", "image", "--format", "json", test_image],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    universal_newlines=True,  # Changed from text=True
+                    universal_newlines=True,
                     timeout=60
                 )
                 trivy_test = {
@@ -418,7 +426,7 @@ def debug_namespace(namespace):
             'pod_count': len(pods.items),
             'pod_details': pod_info,
             'trivy_test': trivy_test,
-            'current_context': config.list_kube_config_contexts()[1]['name'] if config.list_kube_config_contexts()[1] else 'unknown'
+            'kubernetes_config': 'in-cluster' if hasattr(config, '_incluster_namespace') else 'external'
         })
     except Exception as e:
         return jsonify({'error': str(e), 'error_type': type(e).__name__})
@@ -427,13 +435,12 @@ def debug_namespace(namespace):
 def test_trivy():
     """Test trivy installation and basic functionality"""
     try:
-        # FIXED: Use universal_newlines=True instead of text=True for Python 3.6
         # Test trivy version
         version_result = subprocess.run(
             ["trivy", "--version"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,  # Changed from text=True
+            universal_newlines=True,
             timeout=10
         )
         
@@ -442,7 +449,7 @@ def test_trivy():
             ["trivy", "image", "--format", "json", "alpine:latest"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,  # Changed from text=True
+            universal_newlines=True,
             timeout=60
         )
         
@@ -450,21 +457,4 @@ def test_trivy():
             'trivy_version': {
                 'return_code': version_result.returncode,
                 'stdout': version_result.stdout,
-                'stderr': version_result.stderr
-            },
-            'trivy_test': {
-                'return_code': test_result.returncode,
-                'stdout_length': len(test_result.stdout),
-                'stderr': test_result.stderr,
-                'has_json_output': bool(test_result.stdout.strip())
-            }
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-if __name__ == "__main__":
-    print("🚀 Starting Trivy UI Application")
-    print("📊 Debug endpoints available:")
-    print("   - /debug/<namespace> - Debug namespace scanning")
-    print("   - /test-trivy - Test Trivy installation")
-    app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
+                # Trivy Scanner AKS Deployment with ConfigMaps

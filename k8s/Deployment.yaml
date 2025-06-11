@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: image-scanner
+  namespace: default
+  labels:
+    app: image-scanner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: image-scanner
+  template:
+    metadata:
+      labels:
+        app: image-scanner
+    spec:
+      serviceAccountName: image-scanner
+      containers:
+      - name: scanner
+        image: python:3.12.4-slim
+        command: ["/bin/bash"]
+        args:
+        - -c
+        - |
+          echo "🚀 Starting Kubernetes Image Scanner..."
+
+          echo "📦 Installing prerequisites..."
+          apt-get update
+          apt-get install -y python3 python3-pip curl wget ca-certificates
+          
+          # Install Trivy directly from GitHub releases
+          echo "📦 Installing Trivy from GitHub..."
+          TRIVY_VERSION="0.63.0"
+          wget -q "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -O /tmp/trivy.tar.gz
+          cd /tmp
+          tar zxf trivy.tar.gz
+          mv trivy /usr/local/bin/
+          chmod +x /usr/local/bin/trivy
+          rm /tmp/trivy.tar.gz
+          echo "✅ Trivy installed successfully"
+          
+          # Test Trivy installation
+          trivy --version
+ 
+          # Create templates directory in writable location and copy HTML files
+          echo "📁 Setting up templates..."
+          mkdir -p /tmp/app/templates
+          cp /app/*.py /tmp/app/
+          cp /app/requirements.txt /tmp/app/
+          cp /app/index.html /tmp/app/templates/
+          cp /app/results.html /tmp/app/templates/
+          cp /app/scan.html /tmp/app/templates/
+          cd /tmp/app
+          echo "✅ Templates copied successfully to /tmp/app"
+          
+          # Upgrade pip first
+          echo "📦 Upgrading pip..."
+          pip install --upgrade pip
+          
+          # Install dependencies
+          echo "📦 Installing dependencies..."
+          pip install --no-cache-dir -r /tmp/app/requirements.txt
+          echo "✅ Dependencies installed"
+          
+          # Test Kubernetes connectivity
+          echo "🔍 Testing Kubernetes connectivity..."
+          python -c "
+          from kubernetes import client, config
+          try:
+              config.load_incluster_config()
+              v1 = client.CoreV1Api()
+              namespaces = v1.list_namespace()
+              print(f'✅ Successfully connected to Kubernetes. Found {len(namespaces.items)} namespaces')
+          except Exception as e:
+              print(f'❌ Kubernetes connection failed: {e}')
+              exit(1)
+          "
+          
+          # Start the Flask application
+          echo "🌐 Starting Flask application..."
+          python /tmp/app/scanner.py
+        ports:
+        - containerPort: 5000
+          name: http
+        volumeMounts:
+        - name: script-volume
+          mountPath: /app
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: script-volume
+        configMap:
+          name: image-scanner-script
+          defaultMode: 0755
+      restartPolicy: Always
