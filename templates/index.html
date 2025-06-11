@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trivy Kubernetes Security Scanner</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .scan-form {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 40px;
+            backdrop-filter: blur(10px);
+        }
+
+        .form-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .form-group input {
+            flex: 1;
+            min-width: 300px;
+            padding: 15px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            padding: 15px 30px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #fcc;
+        }
+
+        .scan-history {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .history-header {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .history-header h2 {
+            font-size: 1.8rem;
+            margin-bottom: 5px;
+        }
+
+        .history-grid {
+            display: grid;
+            gap: 20px;
+            padding: 25px;
+        }
+
+        .history-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+
+        .history-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .namespace-name {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-scanning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .vuln-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .vuln-stat {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .critical {
+            background: #dc3545;
+            color: white;
+        }
+
+        .high {
+            background: #fd7e14;
+            color: white;
+        }
+
+        .medium {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .low {
+            background: #28a745;
+            color: white;
+        }
+
+        .unknown {
+            background: #6c757d;
+            color: white;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            border-radius: 6px;
+            text-decoration: none;
+            color: white;
+            background: #6c757d;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: #007bff;
+        }
+
+        .btn-success {
+            background: #28a745;
+        }
+
+        .btn-small:hover {
+            transform: translateY(-1px);
+            opacity: 0.9;
+        }
+
+        .metadata-info {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .scanning-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #856404;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .form-group {
+                flex-direction: column;
+            }
+
+            .form-group input {
+                min-width: auto;
+                width: 100%;
+            }
+
+            .vuln-stats {
+                grid-template-columns: repeat(5, 1fr);
+                gap: 5px;
+            }
+
+            .vuln-stat {
+                padding: 8px 4px;
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-shield-alt"></i> Trivy Security Scanner</h1>
+            <p>Kubernetes Container Vulnerability Assessment</p>
+        </div>
+
+        <div class="scan-form">
+            <form method="POST">
+                {% if error %}
+                <div class="error">
+                    <i class="fas fa-exclamation-triangle"></i> {{ error }}
+                </div>
+                {% endif %}
+                
+                <div class="form-group">
+                    <input name="namespace" placeholder="Enter Kubernetes Namespace" required />
+                    <button type="submit" class="btn">
+                        <i class="fas fa-search"></i> Start Scan
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="scan-history">
+            <div class="history-header">
+                <h2><i class="fas fa-history"></i> Scan History</h2>
+                <p>View and manage your security scans</p>
+            </div>
+            
+            <div class="history-grid">
+                {% if scan_history %}
+                    {% for scan in scan_history %}
+                    <div class="history-card">
+                        <div class="card-header">
+                            <div class="namespace-name">
+                                <i class="fas fa-cube"></i>
+                                {{ scan.namespace }}
+                            </div>
+                            <div class="status-badge status-{{ scan.metadata.get('status', 'unknown') }}">
+                                {% if scan.is_scanning %}
+                                    <div class="scanning-indicator">
+                                        <div class="spinner"></div>
+                                        Scanning
+                                    </div>
+                                {% else %}
+                                    {{ scan.metadata.get('status', 'Unknown').title() }}
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if scan.total_vulnerabilities > 0 %}
+                        <div class="vuln-stats">
+                            <div class="vuln-stat critical" title="Critical Vulnerabilities">
+                                <div>{{ scan.stats.CRITICAL }}</div>
+                                <small>CRIT</small>
+                            </div>
+                            <div class="vuln-stat high" title="High Vulnerabilities">
+                                <div>{{ scan.stats.HIGH }}</div>
+                                <small>HIGH</small>
+                            </div>
+                            <div class="vuln-stat medium" title="Medium Vulnerabilities">
+                                <div>{{ scan.stats.MEDIUM }}</div>
+                                <small>MED</small>
+                            </div>
+                            <div class="vuln-stat low" title="Low Vulnerabilities">
+                                <div>{{ scan.stats.LOW }}</div>
+                                <small>LOW</small>
+                            </div>
+                            <div class="vuln-stat unknown" title="Unknown Vulnerabilities">
+                                <div>{{ scan.stats.UNKNOWN }}</div>
+                                <small>UNK</small>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="metadata-info">
+                            {% if scan.metadata.get('start_time') %}
+                                <i class="fas fa-clock"></i> 
+                                Scanned: {{ scan.metadata.start_time[:19].replace('T', ' ') }}
+                            {% endif %}
+                            {% if scan.metadata.get('total_images') %}
+                                | <i class="fas fa-images"></i> 
+                                Images: {{ scan.metadata.get('scanned_images', 0) }}/{{ scan.metadata.total_images }}
+                            {% endif %}
+                            {% if scan.total_vulnerabilities > 0 %}
+                                | <i class="fas fa-bug"></i> 
+                                Total Vulnerabilities: {{ scan.total_vulnerabilities }}
+                            {% endif %}
+                        </div>
+
+                        <div class="card-actions">
+                            {% if scan.is_scanning %}
+                                <a href="/scan/{{ scan.namespace }}" class="btn-small btn-primary">
+                                    <i class="fas fa-eye"></i> Watch Scan
+                                </a>
+                            {% else %}
+                                <a href="/results/{{ scan.namespace }}" class="btn-small btn-success">
+                                    <i class="fas fa-chart-bar"></i> View Results
+                                </a>
+                                <a href="/scan/{{ scan.namespace }}" class="btn-small">
+                                    <i class="fas fa-redo"></i> Rescan
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <i class="fas fa-search"></i>
+                        <h3>No scans yet</h3>
+                        <p>Start by entering a Kubernetes namespace above to begin your first security scan.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-refresh page every 30 seconds to show updated scan status
+        setTimeout(() => {
+            const hasActiveScans = document.querySelector('.status-scanning');
+            if (hasActiveScans) {
+                location.reload();
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
