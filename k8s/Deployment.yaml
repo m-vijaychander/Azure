@@ -43,28 +43,15 @@ spec:
           # Test Trivy installation
           trivy --version
 
-                   # Setup ACR authentication without Docker
+          # Setup ACR authentication without Docker
           echo "🔐 Setting up ACR authentication (Docker-free)..."
+
+          export CLIENT_ID="your-service-principal-client-id"
+          export CLIENT_SECRET="your-service-principal-client-secret"  
+          export TENANT_ID="your-azure-tenant-id"
+          export ACR_REGISTRY_NAME="azops"  # or your registry name
           
-          echo "✅ Managed identity authentication successful"
-            
-          ACR_TOKEN=$(az acr login --name "$ACR_REGISTRY_NAME" --expose-token --output tsv --query accessToken 2>/dev/null)
-              
-          echo "✅ ACR access token obtained successfully"
-                
-          # Set up environment for Trivy to use the token
-          export TRIVY_USERNAME="00000000-0000-0000-0000-000000000000"
-          export TRIVY_PASSWORD="$ACR_TOKEN"
-                
-          # Create Trivy config for ACR authentication
-          mkdir -p ~/.config/trivy
-          cat > ~/.config/trivy/config.yaml << EOF
-registry:
-  "${ACR_REGISTRY_NAME}.azurecr.io":
-    username: "00000000-0000-0000-0000-000000000000"
-    password: "$ACR_TOKEN"
-EOF
-                echo "✅ Trivy ACR authentication configured"
+          echo "✅ Trivy ACR authentication configured"
  
           # Create templates directory in writable location and copy HTML files
           echo "📁 Setting up templates..."
@@ -106,6 +93,15 @@ EOF
         ports:
         - containerPort: 5000
           name: http
+        env:
+        - name: CLIENT_ID
+          value: "your-service-principal-client-id"
+        - name: CLIENT_SECRET
+          value: "your-service-principal-client-secret"
+        - name: TENANT_ID
+          value: "your-azure-tenant-id"
+        - name: ACR_REGISTRY_NAME
+          value: "azops"
         volumeMounts:
         - name: script-volume
           mountPath: /app
