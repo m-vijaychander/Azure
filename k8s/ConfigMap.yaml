@@ -1959,8 +1959,8 @@ data:
     </html>
     '''
 
-    RESULTS_HTML = '''
-    <!DOCTYPE html>
+RESULTS_HTML = '''
+<!DOCTYPE html>
 <html>
 <head>
     <title>Results - {{ namespace }} - Trivy Scanner</title>
