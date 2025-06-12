@@ -17,6 +17,16 @@ data:
 
     app = Flask(__name__)
 
+    # ACR Configuration - Set these as environment variables
+    ACR_CLIENT_ID = os.getenv('CLIENT_ID')
+    ACR_CLIENT_SECRET = os.getenv('CLIENT_SECRET')
+    ACR_TENANT_ID = os.getenv('TENANT_ID')
+    ACR_REGISTRY_NAME = os.getenv('ACR_REGISTRY_NAME', 'azops')  # Default to 'azops'
+
+    # Global variable to store ACR token
+    acr_token = None
+    token_expiry = None
+
     # Load Kubernetes config
     try:
         config.load_incluster_config()
@@ -37,6 +47,96 @@ data:
     scan_logs_by_namespace = {}
     scan_metadata_by_namespace = {}
     is_scanning_by_namespace = {}
+
+    def authenticate_with_acr():
+        """Authenticate with Azure Container Registry and get access token"""
+        global acr_token, token_expiry
+        
+        print("🔐 Authenticating with Azure Container Registry...")
+        
+        # Check if required environment variables are set
+        if not all([ACR_CLIENT_ID, ACR_CLIENT_SECRET, ACR_TENANT_ID]):
+            raise Exception("Missing required environment variables: CLIENT_ID, CLIENT_SECRET, TENANT_ID")
+        
+        try:
+            # Step 1: Login to Azure using service principal
+            print(f"🔑 Logging in to Azure with service principal...")
+            login_cmd = [
+                "az", "login", "--service-principal",
+                "--username", ACR_CLIENT_ID,
+                "--password", ACR_CLIENT_SECRET,
+                "--tenant", ACR_TENANT_ID
+            ]
+            
+            login_result = subprocess.run(
+                login_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60
+            )
+            
+            if login_result.returncode != 0:
+                raise Exception(f"Azure login failed: {login_result.stderr}")
+            
+            print("✅ Successfully logged in to Azure")
+            
+            # Step 2: Get ACR access token
+            print(f"🎫 Getting ACR access token for registry: {ACR_REGISTRY_NAME}")
+            token_cmd = [
+                "az", "acr", "login",
+                "-n", ACR_REGISTRY_NAME,
+                "--expose-token",
+                "--output", "tsv",
+                "--query", "accessToken"
+            ]
+            
+            token_result = subprocess.run(
+                token_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60
+            )
+            
+            if token_result.returncode != 0:
+                raise Exception(f"ACR token retrieval failed: {token_result.stderr}")
+            
+            acr_token = token_result.stdout.strip()
+            if not acr_token:
+                raise Exception("Received empty ACR token")
+            
+            # Set token expiry (ACR tokens typically last 3 hours, we'll refresh after 2.5 hours)
+            token_expiry = datetime.now().timestamp() + (2.5 * 3600)
+            
+            print("✅ Successfully obtained ACR access token")
+            return True
+            
+        except subprocess.TimeoutExpired:
+            raise Exception("Authentication timeout - Azure CLI commands took too long")
+        except Exception as e:
+            print(f"❌ ACR authentication failed: {str(e)}")
+            raise
+
+    def is_acr_token_valid():
+        """Check if the current ACR token is still valid"""
+        global acr_token, token_expiry
+        
+        if not acr_token or not token_expiry:
+            return False
+        
+        # Check if token is about to expire (refresh 5 minutes early)
+        return datetime.now().timestamp() < (token_expiry - 300)
+
+    def ensure_acr_authentication():
+        """Ensure we have a valid ACR token, refresh if needed"""
+        if not is_acr_token_valid():
+            print("🔄 ACR token expired or missing, refreshing...")
+            authenticate_with_acr()
+
+    def is_acr_image(image):
+        """Check if an image is from Azure Container Registry"""
+        return f"{ACR_REGISTRY_NAME}.azurecr.io" in image
 
     def get_all_images(namespace):
         """Get all unique images from a namespace with debug logging"""
@@ -77,8 +177,39 @@ data:
         
         return stats, total_vulns
 
+    def scan_image_with_trivy(image):
+        """Scan a single image with Trivy, handling ACR authentication"""
+        print(f"🔍 Scanning image: {image}")
+        
+        # Build the base command
+        cmd = ["trivy", "image", "--quiet", "--format", "json"]
+        
+        # If this is an ACR image, add authentication
+        if is_acr_image(image):
+            ensure_acr_authentication()
+            print(f"🔐 Using ACR authentication for image: {image}")
+            cmd.extend([
+                "--username", "00000000-0000-0000-0000-000000000000",
+                "--password", acr_token
+            ])
+        
+        cmd.append(image)
+        
+        print(f"DEBUG: Running command: {' '.join(cmd[:7])}... [credentials hidden]")
+        
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=300,
+            check=False
+        )
+        
+        return result
+
     def scan_worker(namespace):
-        """Enhanced scan worker with comprehensive debugging"""
+        """Enhanced scan worker with comprehensive debugging and ACR support"""
         global scan_results_by_namespace, scan_logs_by_namespace, scan_metadata_by_namespace, is_scanning_by_namespace
         
         print(f"=== STARTING SCAN FOR NAMESPACE: {namespace} ===")
@@ -92,14 +223,34 @@ data:
             'status': 'scanning',
             'total_images': 0,
             'scanned_images': 0,
-            'failed_images': 0
+            'failed_images': 0,
+            'acr_images': 0
         }
         is_scanning_by_namespace[namespace] = True
 
         try:
+            # Authenticate with ACR at the start of scanning
+            try:
+                ensure_acr_authentication()
+                scan_logs_by_namespace[namespace].append({
+                    'timestamp': datetime.now().isoformat(),
+                    'level': 'INFO',
+                    'message': '🔐 ACR authentication successful'
+                })
+            except Exception as e:
+                scan_logs_by_namespace[namespace].append({
+                    'timestamp': datetime.now().isoformat(),
+                    'level': 'WARNING',
+                    'message': f'⚠️ ACR authentication failed: {str(e)}. ACR images may fail to scan.'
+                })
+
             images = get_all_images(namespace)
             print(f"DEBUG: Images to scan: {images}")
+            
+            # Count ACR images
+            acr_image_count = sum(1 for img in images if is_acr_image(img))
             scan_metadata_by_namespace[namespace]['total_images'] = len(images)
+            scan_metadata_by_namespace[namespace]['acr_images'] = acr_image_count
             
             if not images:
                 message = f"No images found in namespace {namespace}"
@@ -115,11 +266,13 @@ data:
             scan_logs_by_namespace[namespace].append({
                 'timestamp': datetime.now().isoformat(),
                 'level': 'INFO',
-                'message': f"Found {len(images)} images to scan in namespace {namespace}"
+                'message': f"Found {len(images)} images to scan in namespace {namespace} ({acr_image_count} ACR images)"
             })
 
             for i, image in enumerate(images, 1):
                 log_message = f"Scanning image {i}/{len(images)}: {image}"
+                if is_acr_image(image):
+                    log_message += " 🔐 (ACR)"
                 print(f"DEBUG: {log_message}")
                 
                 scan_logs_by_namespace[namespace].append({
@@ -129,18 +282,7 @@ data:
                 })
                 
                 try:
-                    # Debug: Show exact command being run
-                    cmd = ["trivy", "image", "--quiet", "--format", "json", image]
-                    print(f"DEBUG: Running command: {' '.join(cmd)}")
-                    
-                    result = subprocess.run(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        timeout=300,
-                        check=False  # Don't raise exception on non-zero exit
-                    )
+                    result = scan_image_with_trivy(image)
                     
                     print(f"DEBUG: Trivy return code: {result.returncode}")
                     print(f"DEBUG: Trivy stdout length: {len(result.stdout)}")
@@ -221,16 +363,21 @@ data:
                         "image": image,
                         "vulnerabilities": image_vulnerabilities,
                         "scan_time": datetime.now().isoformat(),
-                        "status": "success"
+                        "status": "success",
+                        "is_acr": is_acr_image(image)
                     }
                     scan_results_by_namespace[namespace].append(result_data)
                     print(f"DEBUG: Added result for {image} with {len(image_vulnerabilities)} vulnerabilities")
                     
                     scan_metadata_by_namespace[namespace]['scanned_images'] += 1
+                    success_msg = f"✅ Completed scanning {image} - Found {len(image_vulnerabilities)} vulnerabilities"
+                    if is_acr_image(image):
+                        success_msg += " 🔐"
+                    
                     scan_logs_by_namespace[namespace].append({
                         'timestamp': datetime.now().isoformat(),
                         'level': 'SUCCESS',
-                        'message': f"✅ Completed scanning {image} - Found {len(image_vulnerabilities)} vulnerabilities"
+                        'message': success_msg
                     })
                     
                 except subprocess.TimeoutExpired:
@@ -269,7 +416,7 @@ data:
             
             # Final summary log
             metadata = scan_metadata_by_namespace[namespace]
-            final_msg = f"🏁 Scan completed! Images: {metadata['scanned_images']}/{metadata['total_images']}, Failed: {metadata['failed_images']}"
+            final_msg = f"🏁 Scan completed! Images: {metadata['scanned_images']}/{metadata['total_images']}, Failed: {metadata['failed_images']}, ACR: {metadata['acr_images']}"
             print(f"DEBUG: {final_msg}")
             print(f"DEBUG: Final results count for {namespace}: {len(scan_results_by_namespace[namespace])}")
             
@@ -376,6 +523,9 @@ data:
             # Test the get_all_images function
             images = get_all_images(namespace)
             
+            # Count ACR images
+            acr_images = [img for img in images if is_acr_image(img)]
+            
             # Get pods directly to compare
             pods = v1.list_namespaced_pod(namespace)
             pod_info = []
@@ -389,7 +539,8 @@ data:
                 for container in pod.spec.containers:
                     pod_data['containers'].append({
                         'name': container.name,
-                        'image': container.image
+                        'image': container.image,
+                        'is_acr': is_acr_image(container.image)
                     })
                 pod_info.append(pod_data)
             
@@ -398,15 +549,10 @@ data:
             if images:
                 test_image = images[0]
                 try:
-                    result = subprocess.run(
-                        ["trivy", "image", "--format", "json", test_image],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        timeout=60
-                    )
+                    result = scan_image_with_trivy(test_image)
                     trivy_test = {
                         'test_image': test_image,
+                        'is_acr': is_acr_image(test_image),
                         'return_code': result.returncode,
                         'stdout_length': len(result.stdout),
                         'stderr': result.stderr,
@@ -428,9 +574,16 @@ data:
                 'namespace': namespace,
                 'images_from_function': images,
                 'image_count': len(images),
+                'acr_images': acr_images,
+                'acr_count': len(acr_images),
                 'pod_count': len(pods.items),
                 'pod_details': pod_info,
                 'trivy_test': trivy_test,
+                'acr_config': {
+                    'registry_name': ACR_REGISTRY_NAME,
+                    'has_credentials': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID),
+                    'token_valid': is_acr_token_valid()
+                },
                 'current_context': config.list_kube_config_contexts()[1]['name'] if config.list_kube_config_contexts()[1] else 'unknown'
             })
         except Exception as e:
@@ -449,7 +602,7 @@ data:
                 timeout=10
             )
             
-            # Test trivy with a simple image
+            # Test trivy with a simple public image
             test_result = subprocess.run(
                 ["trivy", "image", "--format", "json", "alpine:latest"],
                 stdout=subprocess.PIPE,
@@ -469,20 +622,63 @@ data:
                     'stdout_length': len(test_result.stdout),
                     'stderr': test_result.stderr,
                     'has_json_output': bool(test_result.stdout.strip())
+                },
+                'acr_status': {
+                    'authenticated': is_acr_token_valid(),
+                    'registry': ACR_REGISTRY_NAME,
+                    'has_config': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)
                 }
             })
         except Exception as e:
             return jsonify({'error': str(e)})
 
+    @app.route("/test-acr")
+    def test_acr():
+        """Test ACR authentication"""
+        try:
+            authenticate_with_acr()
+            return jsonify({
+                'status': 'success',
+                'message': 'ACR authentication successful',
+                'registry': ACR_REGISTRY_NAME,
+                'token_valid': is_acr_token_valid()
+            })
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e),
+                'registry': ACR_REGISTRY_NAME,
+                'has_config': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)
+            })
+
     @app.route("/health")
     def health():
-        return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+        return jsonify({
+            "status": "healthy", 
+            "timestamp": datetime.now().isoformat(),
+            "acr_authenticated": is_acr_token_valid()
+        })
 
     if __name__ == "__main__":
-        print("🚀 Starting Trivy UI Application")
+        print("🚀 Starting Enhanced Trivy UI Application with ACR Support")
         print("📊 Debug endpoints available:")
         print("   - /debug/<namespace> - Debug namespace scanning")
         print("   - /test-trivy - Test Trivy installation")
+        print("   - /test-acr - Test ACR authentication")
+        print("🔐 ACR Configuration:")
+        print(f"   - Registry: {ACR_REGISTRY_NAME}")
+        print(f"   - Has credentials: {bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)}")
+        
+        # Test ACR authentication on startup
+        if ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID:
+            try:
+                authenticate_with_acr()
+                print("✅ Initial ACR authentication successful")
+            except Exception as e:
+                print(f"⚠️ Initial ACR authentication failed: {e}")
+        else:
+            print("⚠️ ACR credentials not configured - ACR images will fail to scan")
+        
         app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
 
   requirements.txt: |
