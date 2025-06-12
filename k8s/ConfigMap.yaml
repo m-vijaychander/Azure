@@ -11,35 +11,45 @@ data:
     import threading
     import os
     import time
+    import sys
     from datetime import datetime
     from kubernetes import client, config
-    from flask import Flask, render_template, request, Response, redirect, url_for, jsonify
+    from flask import Flask, render_template_string, request, Response, redirect, url_for, jsonify
 
     app = Flask(__name__)
 
     # ACR Configuration - Set these as environment variables
-    ACR_CLIENT_ID = os.getenv('CLIENT_ID')
-    ACR_CLIENT_SECRET = os.getenv('CLIENT_SECRET')
-    ACR_TENANT_ID = os.getenv('TENANT_ID')
-    ACR_REGISTRY_NAME = os.getenv('ACR_REGISTRY_NAME', 'azops')  # Default to 'azops'
+    ACR_CLIENT_ID = os.getenv('AZURE_CLIENT_ID')
+    ACR_CLIENT_SECRET = os.getenv('AZURE_CLIENT_SECRET')
+    ACR_TENANT_ID = os.getenv('AZURE_TENANT_ID')
+    ACR_REGISTRY_NAME = os.getenv('ACR_REGISTRY_NAME', 'azops')
 
     # Global variable to store ACR token
     acr_token = None
     token_expiry = None
 
+    # Enhanced logging function
+    def log_message(message, level="INFO"):
+        """Enhanced logging with console output and timestamp"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formatted_message = f"[{timestamp}] [{level}] {message}"
+        print(formatted_message, flush=True)  # Force flush to ensure immediate output
+        sys.stdout.flush()
+        return formatted_message
+
     # Load Kubernetes config
     try:
         config.load_incluster_config()
         v1 = client.CoreV1Api()
-        print("✅ Successfully loaded Kubernetes in-cluster config")
+        log_message("✅ Successfully loaded Kubernetes in-cluster config")
     except Exception as e:
-        print(f"❌ Failed to load Kubernetes config: {e}")
+        log_message(f"❌ Failed to load Kubernetes config: {e}", "ERROR")
         try:
             config.load_kube_config()
             v1 = client.CoreV1Api()
-            print("✅ Successfully loaded Kubernetes config from file")
+            log_message("✅ Successfully loaded Kubernetes config from file")
         except Exception as e2:
-            print(f"❌ Failed to load any Kubernetes config: {e2}")
+            log_message(f"❌ Failed to load any Kubernetes config: {e2}", "ERROR")
             exit(1)
 
     # Enhanced data structures
@@ -52,15 +62,13 @@ data:
         """Authenticate with Azure Container Registry and get access token"""
         global acr_token, token_expiry
         
-        print("🔐 Authenticating with Azure Container Registry...")
+        log_message("🔐 Authenticating with Azure Container Registry...")
         
-        # Check if required environment variables are set
         if not all([ACR_CLIENT_ID, ACR_CLIENT_SECRET, ACR_TENANT_ID]):
             raise Exception("Missing required environment variables: CLIENT_ID, CLIENT_SECRET, TENANT_ID")
         
         try:
-            # Step 1: Login to Azure using service principal
-            print(f"🔑 Logging in to Azure with service principal...")
+            log_message(f"🔑 Logging in to Azure with service principal...")
             login_cmd = [
                 "az", "login", "--service-principal",
                 "--username", ACR_CLIENT_ID,
@@ -79,10 +87,9 @@ data:
             if login_result.returncode != 0:
                 raise Exception(f"Azure login failed: {login_result.stderr}")
             
-            print("✅ Successfully logged in to Azure")
+            log_message("✅ Successfully logged in to Azure")
             
-            # Step 2: Get ACR access token
-            print(f"🎫 Getting ACR access token for registry: {ACR_REGISTRY_NAME}")
+            log_message(f"🎫 Getting ACR access token for registry: {ACR_REGISTRY_NAME}")
             token_cmd = [
                 "az", "acr", "login",
                 "-n", ACR_REGISTRY_NAME,
@@ -106,16 +113,14 @@ data:
             if not acr_token:
                 raise Exception("Received empty ACR token")
             
-            # Set token expiry (ACR tokens typically last 3 hours, we'll refresh after 2.5 hours)
             token_expiry = datetime.now().timestamp() + (2.5 * 3600)
-            
-            print("✅ Successfully obtained ACR access token")
+            log_message("✅ Successfully obtained ACR access token")
             return True
             
         except subprocess.TimeoutExpired:
             raise Exception("Authentication timeout - Azure CLI commands took too long")
         except Exception as e:
-            print(f"❌ ACR authentication failed: {str(e)}")
+            log_message(f"❌ ACR authentication failed: {str(e)}", "ERROR")
             raise
 
     def is_acr_token_valid():
@@ -125,13 +130,12 @@ data:
         if not acr_token or not token_expiry:
             return False
         
-        # Check if token is about to expire (refresh 5 minutes early)
         return datetime.now().timestamp() < (token_expiry - 300)
 
     def ensure_acr_authentication():
         """Ensure we have a valid ACR token, refresh if needed"""
         if not is_acr_token_valid():
-            print("🔄 ACR token expired or missing, refreshing...")
+            log_message("🔄 ACR token expired or missing, refreshing...")
             authenticate_with_acr()
 
     def is_acr_image(image):
@@ -142,26 +146,25 @@ data:
         """Get all unique images from a namespace with debug logging"""
         images = set()
         try:
-            print(f"DEBUG: Attempting to list pods in namespace: {namespace}")
+            log_message(f"Attempting to list pods in namespace: {namespace}")
             pods = v1.list_namespaced_pod(namespace)
-            print(f"DEBUG: Found {len(pods.items)} pods in namespace {namespace}")
+            log_message(f"Found {len(pods.items)} pods in namespace {namespace}")
             
             for pod in pods.items:
-                print(f"DEBUG: Pod {pod.metadata.name} status: {pod.status.phase}")
+                log_message(f"Pod {pod.metadata.name} status: {pod.status.phase}")
                 if pod.spec.containers:
                     for container in pod.spec.containers:
-                        print(f"DEBUG: Container {container.name} image: {container.image}")
+                        log_message(f"Container {container.name} image: {container.image}")
                         images.add(container.image)
                 
-                # Also check init containers
                 if pod.spec.init_containers:
                     for container in pod.spec.init_containers:
-                        print(f"DEBUG: Init container {container.name} image: {container.image}")
+                        log_message(f"Init container {container.name} image: {container.image}")
                         images.add(container.image)
             
-            print(f"DEBUG: Total unique images found: {list(images)}")
+            log_message(f"Total unique images found: {list(images)}")
         except Exception as e:
-            print(f"ERROR: Getting images from namespace {namespace}: {e}")
+            log_message(f"Error getting images from namespace {namespace}: {e}", "ERROR")
         return list(images)
 
     def get_vulnerability_stats(results):
@@ -179,15 +182,13 @@ data:
 
     def scan_image_with_trivy(image):
         """Scan a single image with Trivy, handling ACR authentication"""
-        print(f"🔍 Scanning image: {image}")
+        log_message(f"🔍 Scanning image: {image}")
         
-        # Build the base command
         cmd = ["trivy", "image", "--quiet", "--format", "json"]
         
-        # If this is an ACR image, add authentication
         if is_acr_image(image):
             ensure_acr_authentication()
-            print(f"🔐 Using ACR authentication for image: {image}")
+            log_message(f"🔐 Using ACR authentication for image: {image}")
             cmd.extend([
                 "--username", "00000000-0000-0000-0000-000000000000",
                 "--password", acr_token
@@ -195,7 +196,7 @@ data:
         
         cmd.append(image)
         
-        print(f"DEBUG: Running command: {' '.join(cmd[:7])}... [credentials hidden]")
+        log_message(f"Running command: {' '.join(cmd[:7])}... [credentials hidden]")
         
         result = subprocess.run(
             cmd,
@@ -212,7 +213,7 @@ data:
         """Enhanced scan worker with comprehensive debugging and ACR support"""
         global scan_results_by_namespace, scan_logs_by_namespace, scan_metadata_by_namespace, is_scanning_by_namespace
         
-        print(f"=== STARTING SCAN FOR NAMESPACE: {namespace} ===")
+        log_message(f"=== STARTING SCAN FOR NAMESPACE: {namespace} ===")
         
         # Initialize data structures
         scan_results_by_namespace[namespace] = []
@@ -228,24 +229,25 @@ data:
         }
         is_scanning_by_namespace[namespace] = True
 
+        def add_log(level, message):
+            """Add log entry to both console and scan logs"""
+            log_message(message, level)  # Console logging
+            scan_logs_by_namespace[namespace].append({
+                'timestamp': datetime.now().isoformat(),
+                'level': level,
+                'message': message
+            })
+
         try:
             # Authenticate with ACR at the start of scanning
             try:
                 ensure_acr_authentication()
-                scan_logs_by_namespace[namespace].append({
-                    'timestamp': datetime.now().isoformat(),
-                    'level': 'INFO',
-                    'message': '🔐 ACR authentication successful'
-                })
+                add_log('INFO', '🔐 ACR authentication successful')
             except Exception as e:
-                scan_logs_by_namespace[namespace].append({
-                    'timestamp': datetime.now().isoformat(),
-                    'level': 'WARNING',
-                    'message': f'⚠️ ACR authentication failed: {str(e)}. ACR images may fail to scan.'
-                })
+                add_log('WARNING', f'⚠️ ACR authentication failed: {str(e)}. ACR images may fail to scan.')
 
             images = get_all_images(namespace)
-            print(f"DEBUG: Images to scan: {images}")
+            log_message(f"Images to scan: {images}")
             
             # Count ACR images
             acr_image_count = sum(1 for img in images if is_acr_image(img))
@@ -254,91 +256,60 @@ data:
             
             if not images:
                 message = f"No images found in namespace {namespace}"
-                print(f"DEBUG: {message}")
-                scan_logs_by_namespace[namespace].append({
-                    'timestamp': datetime.now().isoformat(),
-                    'level': 'WARNING',
-                    'message': message
-                })
+                add_log('WARNING', message)
                 scan_metadata_by_namespace[namespace]['status'] = 'completed'
                 return
 
-            scan_logs_by_namespace[namespace].append({
-                'timestamp': datetime.now().isoformat(),
-                'level': 'INFO',
-                'message': f"Found {len(images)} images to scan in namespace {namespace} ({acr_image_count} ACR images)"
-            })
+            add_log('INFO', f"Found {len(images)} images to scan in namespace {namespace} ({acr_image_count} ACR images)")
 
             for i, image in enumerate(images, 1):
-                log_message = f"Scanning image {i}/{len(images)}: {image}"
+                log_msg = f"Scanning image {i}/{len(images)}: {image}"
                 if is_acr_image(image):
-                    log_message += " 🔐 (ACR)"
-                print(f"DEBUG: {log_message}")
+                    log_msg += " 🔐 (ACR)"
                 
-                scan_logs_by_namespace[namespace].append({
-                    'timestamp': datetime.now().isoformat(),
-                    'level': 'INFO',
-                    'message': log_message
-                })
+                add_log('INFO', log_msg)
                 
                 try:
                     result = scan_image_with_trivy(image)
                     
-                    print(f"DEBUG: Trivy return code: {result.returncode}")
-                    print(f"DEBUG: Trivy stdout length: {len(result.stdout)}")
-                    print(f"DEBUG: Trivy stderr: {result.stderr}")
+                    log_message(f"Trivy return code: {result.returncode}")
+                    log_message(f"Trivy stdout length: {len(result.stdout)}")
+                    log_message(f"Trivy stderr: {result.stderr}")
                     
-                    # Handle non-zero return codes
                     if result.returncode != 0:
                         error_msg = f"Trivy returned code {result.returncode} for {image}: {result.stderr}"
-                        print(f"DEBUG: {error_msg}")
-                        scan_logs_by_namespace[namespace].append({
-                            'timestamp': datetime.now().isoformat(),
-                            'level': 'WARNING',
-                            'message': error_msg
-                        })
+                        add_log('WARNING', error_msg)
                         scan_metadata_by_namespace[namespace]['failed_images'] += 1
                         continue
                     
                     if not result.stdout.strip():
-                        print(f"DEBUG: Empty output from trivy for image {image}")
-                        scan_logs_by_namespace[namespace].append({
-                            'timestamp': datetime.now().isoformat(),
-                            'level': 'WARNING',
-                            'message': f"Empty scan result for {image}"
-                        })
+                        add_log('WARNING', f"Empty scan result for {image}")
                         scan_metadata_by_namespace[namespace]['scanned_images'] += 1
                         continue
                     
                     try:
                         scan_json = json.loads(result.stdout)
-                        print(f"DEBUG: Parsed JSON keys: {list(scan_json.keys())}")
+                        log_message(f"Parsed JSON keys: {list(scan_json.keys())}")
                     except json.JSONDecodeError as e:
-                        print(f"DEBUG: JSON decode error: {e}")
-                        print(f"DEBUG: Raw output was: {result.stdout[:500]}...")
+                        log_message(f"JSON decode error: {e}", "ERROR")
+                        log_message(f"Raw output was: {result.stdout[:500]}...")
                         scan_metadata_by_namespace[namespace]['failed_images'] += 1
-                        scan_logs_by_namespace[namespace].append({
-                            'timestamp': datetime.now().isoformat(),
-                            'level': 'ERROR',
-                            'message': f"❌ Invalid JSON response for {image}: {str(e)}"
-                        })
+                        add_log('ERROR', f"❌ Invalid JSON response for {image}: {str(e)}")
                         continue
                     
                     image_vulnerabilities = []
                     
-                    # Handle different Trivy output formats
                     results_list = scan_json.get("Results", [])
                     if not results_list:
-                        print(f"DEBUG: No 'Results' key found in JSON for {image}")
-                        # Check if vulnerabilities are at root level (older Trivy versions)
+                        log_message(f"No 'Results' key found in JSON for {image}")
                         if "Vulnerabilities" in scan_json:
                             results_list = [scan_json]
                     
                     for target in results_list:
                         target_name = target.get('Target', 'Unknown')
-                        print(f"DEBUG: Processing target: {target_name}")
+                        log_message(f"Processing target: {target_name}")
                         vulns = target.get("Vulnerabilities", [])
-                        print(f"DEBUG: Found {len(vulns) if vulns else 0} vulnerabilities in target {target_name}")
+                        log_message(f"Found {len(vulns) if vulns else 0} vulnerabilities in target {target_name}")
                         
                         if vulns:
                             for v in vulns:
@@ -354,11 +325,10 @@ data:
                                     "target": target_name
                                 }
                                 image_vulnerabilities.append(vuln_data)
-                                print(f"DEBUG: Added vulnerability: {vuln_data['id']} - {vuln_data['severity']}")
+                                log_message(f"Added vulnerability: {vuln_data['id']} - {vuln_data['severity']}")
                     
-                    print(f"DEBUG: Total vulnerabilities for {image}: {len(image_vulnerabilities)}")
+                    log_message(f"Total vulnerabilities for {image}: {len(image_vulnerabilities)}")
                     
-                    # Always add result, even if no vulnerabilities
                     result_data = {
                         "image": image,
                         "vulnerabilities": image_vulnerabilities,
@@ -367,46 +337,27 @@ data:
                         "is_acr": is_acr_image(image)
                     }
                     scan_results_by_namespace[namespace].append(result_data)
-                    print(f"DEBUG: Added result for {image} with {len(image_vulnerabilities)} vulnerabilities")
+                    log_message(f"Added result for {image} with {len(image_vulnerabilities)} vulnerabilities")
                     
                     scan_metadata_by_namespace[namespace]['scanned_images'] += 1
                     success_msg = f"✅ Completed scanning {image} - Found {len(image_vulnerabilities)} vulnerabilities"
                     if is_acr_image(image):
                         success_msg += " 🔐"
                     
-                    scan_logs_by_namespace[namespace].append({
-                        'timestamp': datetime.now().isoformat(),
-                        'level': 'SUCCESS',
-                        'message': success_msg
-                    })
+                    add_log('SUCCESS', success_msg)
                     
                 except subprocess.TimeoutExpired:
                     scan_metadata_by_namespace[namespace]['failed_images'] += 1
                     error_msg = f"❌ Timeout scanning {image} (exceeded 5 minutes)"
-                    print(f"DEBUG: {error_msg}")
-                    scan_logs_by_namespace[namespace].append({
-                        'timestamp': datetime.now().isoformat(),
-                        'level': 'ERROR',
-                        'message': error_msg
-                    })
+                    add_log('ERROR', error_msg)
                 except Exception as e:
                     scan_metadata_by_namespace[namespace]['failed_images'] += 1
                     error_msg = f"❌ Unexpected error scanning {image}: {str(e)}"
-                    print(f"DEBUG: {error_msg}")
-                    scan_logs_by_namespace[namespace].append({
-                        'timestamp': datetime.now().isoformat(),
-                        'level': 'ERROR',
-                        'message': error_msg
-                    })
+                    add_log('ERROR', error_msg)
         
         except Exception as e:
             error_msg = f"❌ Unexpected error in scan worker: {str(e)}"
-            print(f"DEBUG: {error_msg}")
-            scan_logs_by_namespace[namespace].append({
-                'timestamp': datetime.now().isoformat(),
-                'level': 'ERROR',
-                'message': error_msg
-            })
+            add_log('ERROR', error_msg)
             scan_metadata_by_namespace[namespace]['status'] = 'failed'
         finally:
             scan_metadata_by_namespace[namespace]['end_time'] = datetime.now().isoformat()
@@ -414,279 +365,13 @@ data:
                 scan_metadata_by_namespace[namespace]['status'] = 'completed'
             is_scanning_by_namespace[namespace] = False
             
-            # Final summary log
             metadata = scan_metadata_by_namespace[namespace]
             final_msg = f"🏁 Scan completed! Images: {metadata['scanned_images']}/{metadata['total_images']}, Failed: {metadata['failed_images']}, ACR: {metadata['acr_images']}"
-            print(f"DEBUG: {final_msg}")
-            print(f"DEBUG: Final results count for {namespace}: {len(scan_results_by_namespace[namespace])}")
-            
-            scan_logs_by_namespace[namespace].append({
-                'timestamp': datetime.now().isoformat(),
-                'level': 'INFO',
-                'message': final_msg
-            })
+            add_log('INFO', final_msg)
+            log_message(f"Final results count for {namespace}: {len(scan_results_by_namespace[namespace])}")
 
-    @app.route("/", methods=["GET", "POST"])
-    def index():
-        if request.method == "POST":
-            namespace = request.form["namespace"].strip()
-            if not namespace:
-                return render_template("index.html", 
-                                     namespaces=list(scan_results_by_namespace.keys()),
-                                     error="Please enter a valid namespace")
-            
-            if namespace not in is_scanning_by_namespace or not is_scanning_by_namespace[namespace]:
-                threading.Thread(target=scan_worker, args=(namespace,), daemon=True).start()
-            return redirect(url_for("scan", namespace=namespace))
-
-        # Get scan history with metadata
-        scan_history = []
-        for ns in scan_results_by_namespace.keys():
-            metadata = scan_metadata_by_namespace.get(ns, {})
-            results = scan_results_by_namespace.get(ns, [])
-            stats, total_vulns = get_vulnerability_stats(results)
-            
-            scan_history.append({
-                'namespace': ns,
-                'metadata': metadata,
-                'stats': stats,
-                'total_vulnerabilities': total_vulns,
-                'is_scanning': is_scanning_by_namespace.get(ns, False)
-            })
-
-        return render_template("index.html", scan_history=scan_history)
-
-    @app.route("/scan/<namespace>")
-    def scan(namespace):
-        metadata = scan_metadata_by_namespace.get(namespace, {})
-        return render_template("scan.html", 
-                             namespace=namespace, 
-                             scanning=is_scanning_by_namespace.get(namespace, False),
-                             metadata=metadata)
-
-    @app.route("/logs/<namespace>")
-    def stream_logs(namespace):
-        def generate():
-            last_index = 0
-            while is_scanning_by_namespace.get(namespace, False) or last_index < len(scan_logs_by_namespace.get(namespace, [])):
-                logs = scan_logs_by_namespace.get(namespace, [])
-                new_logs = logs[last_index:]
-                for log in new_logs:
-                    yield f"data: {json.dumps(log)}\n\n"
-                last_index = len(logs)
-                time.sleep(0.5)
-            
-            # Send completion signal
-            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
-
-        return Response(generate(), mimetype="text/event-stream")
-
-    @app.route("/api/scan-status/<namespace>")
-    def scan_status(namespace):
-        """API endpoint for scan status"""
-        return jsonify({
-            'scanning': is_scanning_by_namespace.get(namespace, False),
-            'metadata': scan_metadata_by_namespace.get(namespace, {}),
-            'log_count': len(scan_logs_by_namespace.get(namespace, []))
-        })
-
-    @app.route("/results/<namespace>")
-    def results(namespace):
-        results = scan_results_by_namespace.get(namespace, [])
-        metadata = scan_metadata_by_namespace.get(namespace, {})
-        stats, total_vulns = get_vulnerability_stats(results)
-        
-        return render_template("results.html", 
-                             namespace=namespace, 
-                             results=results,
-                             metadata=metadata,
-                             stats=stats,
-                             total_vulnerabilities=total_vulns)
-
-    @app.route("/api/results/<namespace>")
-    def api_results(namespace):
-        """API endpoint for results data"""
-        results = scan_results_by_namespace.get(namespace, [])
-        stats, total_vulns = get_vulnerability_stats(results)
-        
-        return jsonify({
-            'results': results,
-            'stats': stats,
-            'total_vulnerabilities': total_vulns,
-            'metadata': scan_metadata_by_namespace.get(namespace, {})
-        })
-
-    @app.route("/debug/<namespace>")
-    def debug_namespace(namespace):
-        """Debug endpoint to diagnose issues"""
-        try:
-            # Test the get_all_images function
-            images = get_all_images(namespace)
-            
-            # Count ACR images
-            acr_images = [img for img in images if is_acr_image(img)]
-            
-            # Get pods directly to compare
-            pods = v1.list_namespaced_pod(namespace)
-            pod_info = []
-            
-            for pod in pods.items:
-                pod_data = {
-                    'name': pod.metadata.name,
-                    'status': pod.status.phase,
-                    'containers': []
-                }
-                for container in pod.spec.containers:
-                    pod_data['containers'].append({
-                        'name': container.name,
-                        'image': container.image,
-                        'is_acr': is_acr_image(container.image)
-                    })
-                pod_info.append(pod_data)
-            
-            # Test trivy on first image if available
-            trivy_test = {}
-            if images:
-                test_image = images[0]
-                try:
-                    result = scan_image_with_trivy(test_image)
-                    trivy_test = {
-                        'test_image': test_image,
-                        'is_acr': is_acr_image(test_image),
-                        'return_code': result.returncode,
-                        'stdout_length': len(result.stdout),
-                        'stderr': result.stderr,
-                        'has_output': bool(result.stdout.strip())
-                    }
-                    
-                    if result.stdout:
-                        try:
-                            scan_json = json.loads(result.stdout)
-                            trivy_test['json_keys'] = list(scan_json.keys())
-                            trivy_test['results_count'] = len(scan_json.get('Results', []))
-                        except json.JSONDecodeError:
-                            trivy_test['json_error'] = 'Invalid JSON'
-                            
-                except Exception as e:
-                    trivy_test['error'] = str(e)
-            
-            return jsonify({
-                'namespace': namespace,
-                'images_from_function': images,
-                'image_count': len(images),
-                'acr_images': acr_images,
-                'acr_count': len(acr_images),
-                'pod_count': len(pods.items),
-                'pod_details': pod_info,
-                'trivy_test': trivy_test,
-                'acr_config': {
-                    'registry_name': ACR_REGISTRY_NAME,
-                    'has_credentials': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID),
-                    'token_valid': is_acr_token_valid()
-                },
-                'current_context': config.list_kube_config_contexts()[1]['name'] if config.list_kube_config_contexts()[1] else 'unknown'
-            })
-        except Exception as e:
-            return jsonify({'error': str(e), 'error_type': type(e).__name__})
-
-    @app.route("/test-trivy")
-    def test_trivy():
-        """Test trivy installation and basic functionality"""
-        try:
-            # Test trivy version
-            version_result = subprocess.run(
-                ["trivy", "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=10
-            )
-            
-            # Test trivy with a simple public image
-            test_result = subprocess.run(
-                ["trivy", "image", "--format", "json", "alpine:latest"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=60
-            )
-            
-            return jsonify({
-                'trivy_version': {
-                    'return_code': version_result.returncode,
-                    'stdout': version_result.stdout,
-                    'stderr': version_result.stderr
-                },
-                'trivy_test': {
-                    'return_code': test_result.returncode,
-                    'stdout_length': len(test_result.stdout),
-                    'stderr': test_result.stderr,
-                    'has_json_output': bool(test_result.stdout.strip())
-                },
-                'acr_status': {
-                    'authenticated': is_acr_token_valid(),
-                    'registry': ACR_REGISTRY_NAME,
-                    'has_config': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)
-                }
-            })
-        except Exception as e:
-            return jsonify({'error': str(e)})
-
-    @app.route("/test-acr")
-    def test_acr():
-        """Test ACR authentication"""
-        try:
-            authenticate_with_acr()
-            return jsonify({
-                'status': 'success',
-                'message': 'ACR authentication successful',
-                'registry': ACR_REGISTRY_NAME,
-                'token_valid': is_acr_token_valid()
-            })
-        except Exception as e:
-            return jsonify({
-                'status': 'error',
-                'message': str(e),
-                'registry': ACR_REGISTRY_NAME,
-                'has_config': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)
-            })
-
-    @app.route("/health")
-    def health():
-        return jsonify({
-            "status": "healthy", 
-            "timestamp": datetime.now().isoformat(),
-            "acr_authenticated": is_acr_token_valid()
-        })
-
-    if __name__ == "__main__":
-        print("🚀 Starting Enhanced Trivy UI Application with ACR Support")
-        print("📊 Debug endpoints available:")
-        print("   - /debug/<namespace> - Debug namespace scanning")
-        print("   - /test-trivy - Test Trivy installation")
-        print("   - /test-acr - Test ACR authentication")
-        print("🔐 ACR Configuration:")
-        print(f"   - Registry: {ACR_REGISTRY_NAME}")
-        print(f"   - Has credentials: {bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)}")
-        
-        # Test ACR authentication on startup
-        if ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID:
-            try:
-                authenticate_with_acr()
-                print("✅ Initial ACR authentication successful")
-            except Exception as e:
-                print(f"⚠️ Initial ACR authentication failed: {e}")
-        else:
-            print("⚠️ ACR credentials not configured - ACR images will fail to scan")
-        
-        app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
-
-  requirements.txt: |
-    kubernetes==28.1.0
-    Flask==2.0.3
-    Werkzeug==2.0.3
-
-  index.html: |
+    # HTML Templates stored as strings
+    INDEX_HTML = '''
     <!DOCTYPE html>
     <html>
     <head>
@@ -720,243 +405,49 @@ data:
             }
             .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
             .error { background: #fee; color: #c33; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #fcc; }
-            .history { 
-                background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
-                overflow: hidden;
-            }
-            .history-header { 
-                background: linear-gradient(45deg, #667eea, #764ba2); color: white; 
-                padding: 25px; text-align: center;
-            }
-            .history-header h2 { font-size: 1.8rem; margin-bottom: 5px; }
-            .history-grid { display: grid; gap: 20px; padding: 25px; }
-            .history-card { 
-                background: #f8f9fa; border-radius: 12px; padding: 20px; 
-                border: 1px solid #e9ecef; transition: all 0.3s ease;
-            }
-            .history-card:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,0,0,0.1); }
-            .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-            .namespace-name { 
-                font-size: 1.3rem; font-weight: 600; color: #333; 
-                display: flex; align-items: center; gap: 10px;
-            }
-            .status-badge { 
-                padding: 5px 12px; border-radius: 20px; font-size: 0.85rem; 
-                font-weight: 600; text-transform: uppercase;
-            }
-            .status-scanning { background: #fff3cd; color: #856404; }
-            .status-completed { background: #d4edda; color: #155724; }
-            .status-failed { background: #f8d7da; color: #721c24; }
-            .vuln-stats { 
-                display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); 
-                gap: 10px; margin-bottom: 15px;
-            }
-            .vuln-stat { text-align: center; padding: 10px; border-radius: 8px; font-weight: 600; }
-            .critical { background: #dc3545; color: white; }
-            .high { background: #fd7e14; color: white; }
-            .medium { background: #ffc107; color: #212529; }
-            .low { background: #28a745; color: white; }
-            .unknown { background: #6c757d; color: white; }
-            .card-actions { display: flex; gap: 10px; justify-content: flex-end; }
-            .btn-small { 
-                padding: 8px 16px; font-size: 0.9rem; border-radius: 6px; 
-                text-decoration: none; color: white; background: #6c757d; 
-                transition: all 0.2s ease;
-            }
-            .btn-primary { background: #007bff; }
-            .btn-success { background: #28a745; }
-            .btn-small:hover { transform: translateY(-1px); opacity: 0.9; }
-            .metadata-info { font-size: 0.9rem; color: #666; margin-top: 10px; }
-            .empty-state { text-align: center; padding: 60px 20px; color: #666; }
-            .empty-state i { font-size: 4rem; margin-bottom: 20px; opacity: 0.5; }
-            .scanning-indicator { display: inline-flex; align-items: center; gap: 8px; }
-            .spinner { 
-                width: 16px; height: 16px; border: 2px solid #f3f3f3; 
-                border-top: 2px solid #856404; border-radius: 50%; 
-                animation: spin 1s linear infinite;
-            }
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-            @media (max-width: 768px) {
-                .container { padding: 10px; }
-                .header h1 { font-size: 2rem; }
-                .form-group { flex-direction: column; }
-                .form-group input { min-width: auto; width: 100%; }
-                .vuln-stats { grid-template-columns: repeat(5, 1fr); gap: 5px; }
-                .vuln-stat { padding: 8px 4px; font-size: 0.8rem; }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1><i class="fas fa-shield-alt"></i> Trivy Security Scanner</h1>
-                <p>Kubernetes Container Vulnerability Assessment</p>
-            </div>
             
-            <div class="scan-form">
-                <form method="POST">
-                    {% if error %}
-                    <div class="error">
-                        <i class="fas fa-exclamation-triangle"></i> {{ error }}
-                    </div>
-                    {% endif %}
-                    <div class="form-group">
-                        <input name="namespace" placeholder="Enter Kubernetes Namespace" required />
-                        <button type="submit" class="btn">
-                            <i class="fas fa-search"></i> Start Scan
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            {% if scan_history %}
-            <div class="history">
-                <div class="history-header">
-                    <h2><i class="fas fa-history"></i> Scan History</h2>
-                    <p>View and manage your security scans</p>
-                </div>
-                <div class="history-grid">
-                    {% for scan in scan_history %}
-                    <div class="history-card">
-                        <div class="card-header">
-                            <div class="namespace-name">
-                                <i class="fas fa-cube"></i>
-                                {{ scan.namespace }}
-                            </div>
-                            <div class="status-badge status-{{ scan.metadata.get('status', 'unknown') }}">
-                                {% if scan.is_scanning %}
-                                    <div class="scanning-indicator">
-                                        <div class="spinner"></div>
-                                        Scanning
-                                    </div>
-                                {% else %}
-                                    {{ scan.metadata.get('status', 'Unknown').title() }}
-                                {% endif %}
-                            </div>
-                        </div>
-
-                        {% if scan.total_vulnerabilities > 0 %}
-                        <div class="vuln-stats">
-                            <div class="vuln-stat critical" title="Critical Vulnerabilities">
-                                <div>{{ scan.stats.CRITICAL }}</div>
-                                <small>CRIT</small>
-                            </div>
-                            <div class="vuln-stat high" title="High Vulnerabilities">
-                                <div>{{ scan.stats.HIGH }}</div>
-                                <small>HIGH</small>
-                            </div>
-                            <div class="vuln-stat medium" title="Medium Vulnerabilities">
-                                <div>{{ scan.stats.MEDIUM }}</div>
-                                <small>MED</small>
-                            </div>
-                            <div class="vuln-stat low" title="Low Vulnerabilities">
-                                <div>{{ scan.stats.LOW }}</div>
-                                <small>LOW</small>
-                            </div>
-                            <div class="vuln-stat unknown" title="Unknown Vulnerabilities">
-                                <div>{{ scan.stats.UNKNOWN }}</div>
-                                <small>UNK</small>
-                            </div>
-                        </div>
-                        {% endif %}
-
-                        <div class="metadata-info">
-                            {% if scan.metadata.get('start_time') %}
-                                <i class="fas fa-clock"></i> 
-                                Scanned: {{ scan.metadata.start_time[:19].replace('T', ' ') }}
-                            {% endif %}
-                            {% if scan.metadata.get('total_images') %}
-                                | <i class="fas fa-images"></i> 
-                                Images: {{ scan.metadata.get('scanned_images', 0) }}/{{ scan.metadata.total_images }}
-                            {% endif %}
-                            {% if scan.total_vulnerabilities > 0 %}
-                                | <i class="fas fa-bug"></i> 
-                                Total Vulnerabilities: {{ scan.total_vulnerabilities }}
-                            {% endif %}
-                        </div>
-
-                        <div class="card-actions">
-                            {% if scan.is_scanning %}
-                                <a href="/scan/{{ scan.namespace }}" class="btn-small btn-primary">
-                                    <i class="fas fa-eye"></i> Watch Scan
-                                </a>
-                            {% else %}
-                                <a href="/results/{{ scan.namespace }}" class="btn-small btn-success">
-                                    <i class="fas fa-chart-bar"></i> View Results
-                                </a>
-                                <a href="/scan/{{ scan.namespace }}" class="btn-small">
-                                    <i class="fas fa-redo"></i> Rescan
-                                </a>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% else %}
-            <div class="history">
-                <div class="history-header">
-                    <h2><i class="fas fa-history"></i> Scan History</h2>
-                    <p>View and manage your security scans</p>
-                </div>
-                <div class="empty-state">
-                    <i class="fas fa-search"></i>
-                    <h3>No scans yet</h3>
-                    <p>Start by entering a Kubernetes namespace above to begin your first security scan.</p>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-
-        <script>
-            // Auto-refresh page every 30 seconds to show updated scan status
-            setTimeout(() => {
-                const hasActiveScans = document.querySelector('.status-scanning');
-                if (hasActiveScans) {
-                    location.reload();
-                }
-            }, 30000);
-        </script>
-    </body>
-    </html>
-
-  results.html: |
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Results - {{ namespace }} - Trivy Scanner</title>
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh; color: #333;
-            }
-            .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-            .header {
+            /* Enhanced Filters Section */
+            .filters-section {
                 background: white; border-radius: 15px; padding: 25px; margin-bottom: 25px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex;
-                justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: none;
             }
-            .header-left { display: flex; align-items: center; gap: 15px; }
-            .namespace-icon {
-                width: 60px; height: 60px; background: linear-gradient(45deg, #667eea, #764ba2);
-                border-radius: 12px; display: flex; align-items: center; justify-content: center;
-                color: white; font-size: 1.5rem;
+            .filters-section.show { display: block; animation: slideIn 0.5s ease; }
+            @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            .filters-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+            .filters-header h3 { color: #333; font-size: 1.5rem; margin: 0; }
+            .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minwidth(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+            .filter-group { display: flex; flex-direction: column; gap: 8px; }
+            .filter-label { font-weight: 600; color: #555; font-size: 0.9rem; text-transform: uppercase; }
+            .filter-input, .filter-select {
+                padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
+                font-size: 0.95rem; transition: all 0.3s ease; background: white;
             }
-            .header-info h1 { font-size: 1.8rem; margin-bottom: 5px; color: #333; }
-            .header-info p { color: #666; font-size: 1rem; }
-            .header-right { display: flex; gap: 10px; flex-wrap: wrap; }
-            .btn {
-                padding: 12px 20px; border: none; border-radius: 8px; font-size: 1rem;
-                cursor: pointer; text-decoration: none; display: inline-flex;
-                align-items: center; gap: 8px; transition: all 0.3s ease; font-weight: 500;
+            .filter-input:focus, .filter-select:focus {
+                outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
             }
-            .btn-primary { background: #007bff; color: white; }
-            .btn-secondary { background: #6c757d; color: white; }
-            .btn-warning { background: #ffc107; color: #212529; }
-            .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+            .filter-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+            .filter-btn {
+                padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; 
+                font-size: 0.9rem; font-weight: 500; transition: all 0.3s ease;
+                display: flex; align-items: center; gap: 8px;
+            }
+            .filter-btn-primary { background: #667eea; color: white; }
+            .filter-btn-secondary { background: #6c757d; color: white; }
+            .filter-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.2); }
+            .active-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
+            .filter-tag {
+                background: #e9ecef; padding: 4px 10px; border-radius: 16px; font-size: 0.8rem;
+                display: flex; align-items: center; gap: 5px; color: #495057;
+            }
+            .filter-tag .remove { cursor: pointer; color: #dc3545; font-weight: bold; margin-left: 5px; }
+            .filter-tag .remove:hover { color: #c82333; }
+            .results-summary {
+                background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;
+                display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;
+            }
+            .summary-text { font-weight: 500; color: #495057; }
+            .summary-count { background: #667eea; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.9rem; }
+
             .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
             .stat-card {
                 background: white; padding: 25px; border-radius: 12px;
@@ -981,6 +472,7 @@ data:
                 overflow: hidden; transition: transform 0.3s ease;
             }
             .image-card:hover { transform: translateY(-2px); }
+            .image-card.hidden { display: none; }
             .image-header {
                 background: linear-gradient(45deg, #667eea, #764ba2); color: white;
                 padding: 20px; display: flex; justify-content: space-between;
@@ -1003,6 +495,7 @@ data:
             }
             .vuln-table td { padding: 12px 15px; border-bottom: 1px solid #dee2e6; vertical-align: top; }
             .vuln-table tr:hover { background: #f8f9fa; }
+            .vuln-table tr.hidden { display: none; }
             .severity-badge {
                 padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;
                 font-weight: 600; text-transform: uppercase; white-space: nowrap;
@@ -1043,6 +536,8 @@ data:
             @media (max-width: 768px) {
                 .container { padding: 10px; }
                 .header { flex-direction: column; text-align: center; }
+                .filter-grid { grid-template-columns: 1fr; }
+                .filter-actions { flex-direction: column; }
                 .stats-grid { grid-template-columns: repeat(2, 1fr); }
                 .image-header { flex-direction: column; text-align: center; }
                 .image-stats { justify-content: center; }
@@ -1074,38 +569,99 @@ data:
                 </div>
             </div>
 
+            <div class="filters-section">
+                <div class="filters-header">
+                    <h3><i class="fas fa-filter"></i> Vulnerability Filters</h3>
+                    <button class="filter-toggle" onclick="toggleFilters()">
+                        <i class="fas fa-chevron-down" id="filterToggleIcon"></i> Show/Hide
+                    </button>
+                </div>
+                <div class="filter-content" id="filterContent">
+                    <div class="filter-grid">
+                        <div class="filter-group">
+                            <label class="filter-label">Severity Level</label>
+                            <select id="severityFilter" class="filter-select">
+                                <option value="">All Severities</option>
+                                <option value="CRITICAL">Critical</option>
+                                <option value="HIGH">High</option>
+                                <option value="MEDIUM">Medium</option>
+                                <option value="LOW">Low</option>
+                                <option value="UNKNOWN">Unknown</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Package Name</label>
+                            <input type="text" id="packageFilter" class="filter-input" placeholder="Filter by package...">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Vulnerability ID</label>
+                            <input type="text" id="vulnIdFilter" class="filter-input" placeholder="CVE-2023-xxxx">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Image Name</label>
+                            <input type="text" id="imageFilter" class="filter-input" placeholder="Filter by image...">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Fix Available</label>
+                            <select id="fixFilter" class="filter-select">
+                                <option value="">All</option>
+                                <option value="yes">Has Fix</option>
+                                <option value="no">No Fix</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">CVSS Score</label>
+                            <input type="number" id="cvssFilter" class="filter-input" placeholder="Min CVSS score..." min="0" max="10" step="0.1">
+                        </div>
+                    </div>
+                    <div class="filter-actions">
+                        <button onclick="clearAllFilters()" class="filter-btn filter-btn-secondary">
+                            <i class="fas fa-times"></i> Clear All
+                        </button>
+                        <button onclick="applyFilters()" class="filter-btn filter-btn-primary">
+                            <i class="fas fa-search"></i> Apply Filters
+                        </button>
+                    </div>
+                    <div class="active-filters" id="activeFilters"></div>
+                    <div class="results-summary" id="resultsSummary">
+                        <span class="summary-text">Showing all vulnerabilities</span>
+                        <span class="summary-count" id="summaryCount">{{ total_vulnerabilities }} total</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="stats-grid">
                 <div class="stat-card stat-total">
                     <div class="stat-icon"><i class="fas fa-bug"></i></div>
-                    <div class="stat-value">{{ total_vulnerabilities }}</div>
+                    <div class="stat-value" id="totalVulnCount">{{ total_vulnerabilities }}</div>
                     <div class="stat-label">Total Vulnerabilities</div>
                 </div>
                 <div class="stat-card stat-critical">
                     <div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="stat-value">{{ stats.CRITICAL }}</div>
+                    <div class="stat-value" id="criticalCount">{{ stats.CRITICAL }}</div>
                     <div class="stat-label">Critical</div>
                 </div>
                 <div class="stat-card stat-high">
                     <div class="stat-icon"><i class="fas fa-exclamation"></i></div>
-                    <div class="stat-value">{{ stats.HIGH }}</div>
+                    <div class="stat-value" id="highCount">{{ stats.HIGH }}</div>
                     <div class="stat-label">High</div>
                 </div>
                 <div class="stat-card stat-medium">
                     <div class="stat-icon"><i class="fas fa-minus-circle"></i></div>
-                    <div class="stat-value">{{ stats.MEDIUM }}</div>
+                    <div class="stat-value" id="mediumCount">{{ stats.MEDIUM }}</div>
                     <div class="stat-label">Medium</div>
                 </div>
                 <div class="stat-card stat-low">
                     <div class="stat-icon"><i class="fas fa-info-circle"></i></div>
-                    <div class="stat-value">{{ stats.LOW }}</div>
+                    <div class="stat-value" id="lowCount">{{ stats.LOW }}</div>
                     <div class="stat-label">Low</div>
                 </div>
             </div>
 
             {% if results %}
-            <div class="results-section">
+            <div class="results-section" id="resultsSection">
                 {% for result in results %}
-                <div class="image-card">
+                <div class="image-card" data-image="{{ result.image }}">
                     <div class="image-header">
                         <div class="image-info">
                             <h3>{{ result.image }}</h3>
@@ -1152,7 +708,13 @@ data:
                             </thead>
                             <tbody>
                                 {% for vuln in result.vulnerabilities %}
-                                <tr>
+                                <tr class="vuln-row" 
+                                    data-severity="{{ vuln.severity }}" 
+                                    data-package="{{ vuln.pkg }}" 
+                                    data-vuln-id="{{ vuln.id }}"
+                                    data-image="{{ result.image }}"
+                                    data-has-fix="{{ 'yes' if vuln.fixed else 'no' }}"
+                                    data-cvss="{{ vuln.cvss_score or 0 }}">
                                     <td><div class="vuln-id">{{ vuln.id }}</div></td>
                                     <td><span class="severity-badge severity-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
                                     <td>
@@ -1212,24 +774,144 @@ data:
             <div style="margin-top: 20px; text-align: center;">
                 <p style="color: white; opacity: 0.8;">
                     <i class="fas fa-info-circle"></i>
-                    Showing results for {{ results|length }} image(s) with {{ total_vulnerabilities }} total vulnerabilities
+                    Showing results for {{ results|length }} image(s) with <span id="visibleVulnCount">{{ total_vulnerabilities }}</span> vulnerabilities
                 </p>
             </div>
             {% endif %}
         </div>
 
         <script>
+            let currentFilters = { severity: '', package: '', vulnId: '', image: '', fix: '', cvss: '' };
+            let filterExpanded = true;
+
+            function toggleFilters() {
+                const content = document.getElementById('filterContent');
+                const icon = document.getElementById('filterToggleIcon');
+                
+                filterExpanded = !filterExpanded;
+                content.style.display = filterExpanded ? 'block' : 'none';
+                icon.className = filterExpanded ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+            }
+
+            function applyFilters() {
+                currentFilters = {
+                    severity: document.getElementById('severityFilter').value,
+                    package: document.getElementById('packageFilter').value.toLowerCase().trim(),
+                    vulnId: document.getElementById('vulnIdFilter').value.toLowerCase().trim(),
+                    image: document.getElementById('imageFilter').value.toLowerCase().trim(),
+                    fix: document.getElementById('fixFilter').value,
+                    cvss: document.getElementById('cvssFilter').value
+                };
+
+                let visibleVulns = 0;
+                let stats = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, UNKNOWN: 0 };
+                
+                const vulnRows = document.querySelectorAll('.vuln-row');
+                vulnRows.forEach(row => {
+                    let shouldShow = true;
+
+                    if (currentFilters.severity && row.dataset.severity !== currentFilters.severity) shouldShow = false;
+                    if (currentFilters.package && !row.dataset.package.toLowerCase().includes(currentFilters.package)) shouldShow = false;
+                    if (currentFilters.vulnId && !row.dataset.vulnId.toLowerCase().includes(currentFilters.vulnId)) shouldShow = false;
+                    if (currentFilters.image && !row.dataset.image.toLowerCase().includes(currentFilters.image)) shouldShow = false;
+                    if (currentFilters.fix && row.dataset.hasFix !== currentFilters.fix) shouldShow = false;
+
+                    if (currentFilters.cvss) {
+                        const cvssScore = parseFloat(row.dataset.cvss) || 0;
+                        if (cvssScore < parseFloat(currentFilters.cvss)) shouldShow = false;
+                    }
+
+                    if (shouldShow) {
+                        row.classList.remove('hidden');
+                        visibleVulns++;
+                        stats[row.dataset.severity] = (stats[row.dataset.severity] || 0) + 1;
+                    } else {
+                        row.classList.add('hidden');
+                    }
+                });
+
+                const imageCards = document.querySelectorAll('.image-card');
+                imageCards.forEach(card => {
+                    const visibleRows = card.querySelectorAll('.vuln-row:not(.hidden)');
+                    if (visibleRows.length === 0 && card.querySelector('.vuln-row')) {
+                        card.classList.add('hidden');
+                    } else {
+                        card.classList.remove('hidden');
+                    }
+                });
+
+                updateStatCounts(stats, visibleVulns);
+                updateActiveFilters();
+                updateResultsSummary(visibleVulns);
+            }
+
+            function clearAllFilters() {
+                document.getElementById('severityFilter').value = '';
+                document.getElementById('packageFilter').value = '';
+                document.getElementById('vulnIdFilter').value = '';
+                document.getElementById('imageFilter').value = '';
+                document.getElementById('fixFilter').value = '';
+                document.getElementById('cvssFilter').value = '';
+                
+                currentFilters = { severity: '', package: '', vulnId: '', image: '', fix: '', cvss: '' };
+
+                document.querySelectorAll('.vuln-row').forEach(row => row.classList.remove('hidden'));
+                document.querySelectorAll('.image-card').forEach(card => card.classList.remove('hidden'));
+
+                const originalStats = { CRITICAL: {{ stats.CRITICAL }}, HIGH: {{ stats.HIGH }}, MEDIUM: {{ stats.MEDIUM }}, LOW: {{ stats.LOW }}, UNKNOWN: {{ stats.UNKNOWN or 0 }} };
+                updateStatCounts(originalStats, {{ total_vulnerabilities }});
+                updateActiveFilters();
+                updateResultsSummary({{ total_vulnerabilities }});
+            }
+
+            function updateStatCounts(stats, totalVulns) {
+                document.getElementById('totalVulnCount').textContent = totalVulns;
+                document.getElementById('criticalCount').textContent = stats.CRITICAL || 0;
+                document.getElementById('highCount').textContent = stats.HIGH || 0;
+                document.getElementById('mediumCount').textContent = stats.MEDIUM || 0;
+                document.getElementById('lowCount').textContent = stats.LOW || 0;
+                document.getElementById('visibleVulnCount').textContent = totalVulns;
+            }
+
+            function updateActiveFilters() {
+                const activeFiltersContainer = document.getElementById('activeFilters');
+                activeFiltersContainer.innerHTML = '';
+
+                Object.keys(currentFilters).forEach(key => {
+                    const value = currentFilters[key];
+                    if (value) {
+                        const tag = document.createElement('div');
+                        tag.className = 'filter-tag';
+                        tag.innerHTML = `<span>${key}: ${value}</span><span class="remove" onclick="removeFilter('${key}')">&times;</span>`;
+                        activeFiltersContainer.appendChild(tag);
+                    }
+                });
+            }
+
+            function updateResultsSummary(visibleCount) {
+                const summaryText = document.querySelector('.summary-text');
+                const summaryCount = document.getElementById('summaryCount');
+                
+                const totalCount = {{ total_vulnerabilities }};
+                summaryText.textContent = visibleCount === totalCount ? 'Showing all vulnerabilities' : 'Showing filtered vulnerabilities';
+                summaryCount.textContent = `${visibleCount} of ${totalCount}`;
+            }
+
+            function removeFilter(filterKey) {
+                const filterMap = {
+                    severity: 'severityFilter', package: 'packageFilter', vulnId: 'vulnIdFilter',
+                    image: 'imageFilter', fix: 'fixFilter', cvss: 'cvssFilter'
+                };
+                document.getElementById(filterMap[filterKey]).value = '';
+                applyFilters();
+            }
+
             function toggleDescription(button) {
                 const description = button.nextElementSibling;
                 const isShowing = description.classList.contains('show');
                 
-                if (isShowing) {
-                    description.classList.remove('show');
-                    button.textContent = 'Show Description';
-                } else {
-                    description.classList.add('show');
-                    button.textContent = 'Hide Description';
-                }
+                description.classList.toggle('show', !isShowing);
+                button.textContent = isShowing ? 'Show Description' : 'Hide Description';
             }
 
             function exportResults() {
@@ -1240,7 +922,7 @@ data:
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `trivy-scan-${new Date().toISOString().split('T')[0]}.json`;
+                        a.download = `trivy-scan-{{ namespace }}-${new Date().toISOString().split('T')[0]}.json`;
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);
@@ -1251,11 +933,713 @@ data:
                         alert('Failed to export results');
                     });
             }
+
+            ['severityFilter', 'packageFilter', 'vulnIdFilter', 'imageFilter', 'fixFilter', 'cvssFilter'].forEach(id => {
+                document.getElementById(id).addEventListener(id.includes('Filter') && !id.includes('Filter') ? 'change' : 'input', applyFilters);
+            });
+
+            console.log('Enhanced Trivy Results interface loaded with advanced filtering capabilities');
         </script>
     </body>
     </html>
+    '''
 
-  scan.html: |
+    @app.route("/", methods=["GET", "POST"])
+    def index():
+        if request.method == "POST":
+            namespace = request.form["namespace"].strip()
+            if not namespace:
+                return render_template_string(INDEX_HTML, 
+                                           namespaces=list(scan_results_by_namespace.keys()),
+                                           error="Please enter a valid namespace")
+            
+            if namespace not in is_scanning_by_namespace or not is_scanning_by_namespace[namespace]:
+                threading.Thread(target=scan_worker, args=(namespace,), daemon=True).start()
+            return redirect(url_for("scan", namespace=namespace))
+
+        scan_history = []
+        for ns in scan_results_by_namespace.keys():
+            metadata = scan_metadata_by_namespace.get(ns, {})
+            results = scan_results_by_namespace.get(ns, [])
+            stats, total_vulns = get_vulnerability_stats(results)
+            
+            scan_history.append({
+                'namespace': ns,
+                'metadata': metadata,
+                'stats': stats,
+                'total_vulnerabilities': total_vulns,
+                'is_scanning': is_scanning_by_namespace.get(ns, False)
+            })
+
+        return render_template_string(INDEX_HTML, scan_history=scan_history)
+
+    @app.route("/scan/<namespace>")
+    def scan(namespace):
+        metadata = scan_metadata_by_namespace.get(namespace, {})
+        return render_template_string(SCAN_HTML, 
+                                   namespace=namespace, 
+                                   scanning=is_scanning_by_namespace.get(namespace, False),
+                                   metadata=metadata)
+
+    @app.route("/logs/<namespace>")
+    def stream_logs(namespace):
+        def generate():
+            last_index = 0
+            while is_scanning_by_namespace.get(namespace, False) or last_index < len(scan_logs_by_namespace.get(namespace, [])):
+                logs = scan_logs_by_namespace.get(namespace, [])
+                new_logs = logs[last_index:]
+                for log in new_logs:
+                    yield f"data: {json.dumps(log)}\n\n"
+                last_index = len(logs)
+                time.sleep(0.5)
+            
+            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+
+        return Response(generate(), mimetype="text/event-stream")
+
+    @app.route("/api/scan-status/<namespace>")
+    def scan_status(namespace):
+        """API endpoint for scan status"""
+        return jsonify({
+            'scanning': is_scanning_by_namespace.get(namespace, False),
+            'metadata': scan_metadata_by_namespace.get(namespace, {}),
+            'log_count': len(scan_logs_by_namespace.get(namespace, []))
+        })
+
+    @app.route("/results/<namespace>")
+    def results(namespace):
+        results = scan_results_by_namespace.get(namespace, [])
+        metadata = scan_metadata_by_namespace.get(namespace, {})
+        stats, total_vulns = get_vulnerability_stats(results)
+        
+        return render_template_string(RESULTS_HTML, 
+                                   namespace=namespace, 
+                                   results=results,
+                                   metadata=metadata,
+                                   stats=stats,
+                                   total_vulnerabilities=total_vulns)
+
+    @app.route("/api/results/<namespace>")
+    def api_results(namespace):
+        """API endpoint for results data with filtering"""
+        results = scan_results_by_namespace.get(namespace, [])
+        stats, total_vulns = get_vulnerability_stats(results)
+        
+        # Apply filters if provided
+        severity_filter = request.args.get('severity')
+        if severity_filter:
+            filtered_results = []
+            for result in results:
+                filtered_vulns = [v for v in result.get('vulnerabilities', []) 
+                                if v.get('severity') == severity_filter]
+                if filtered_vulns:
+                    result_copy = result.copy()
+                    result_copy['vulnerabilities'] = filtered_vulns
+                    filtered_results.append(result_copy)
+            results = filtered_results
+        
+        return jsonify({
+            'results': results,
+            'stats': stats,
+            'total_vulnerabilities': total_vulns,
+            'metadata': scan_metadata_by_namespace.get(namespace, {})
+        })
+
+    @app.route("/debug/<namespace>")
+    def debug_namespace(namespace):
+        """Debug endpoint to diagnose issues"""
+        try:
+            images = get_all_images(namespace)
+            acr_images = [img for img in images if is_acr_image(img)]
+            pods = v1.list_namespaced_pod(namespace)
+            pod_info = []
+            
+            for pod in pods.items:
+                pod_data = {
+                    'name': pod.metadata.name,
+                    'status': pod.status.phase,
+                    'containers': []
+                }
+                for container in pod.spec.containers:
+                    pod_data['containers'].append({
+                        'name': container.name,
+                        'image': container.image,
+                        'is_acr': is_acr_image(container.image)
+                    })
+                pod_info.append(pod_data)
+            
+            trivy_test = {}
+            if images:
+                test_image = images[0]
+                try:
+                    result = scan_image_with_trivy(test_image)
+                    trivy_test = {
+                        'test_image': test_image,
+                        'is_acr': is_acr_image(test_image),
+                        'return_code': result.returncode,
+                        'stdout_length': len(result.stdout),
+                        'stderr': result.stderr,
+                        'has_output': bool(result.stdout.strip())
+                    }
+                    
+                    if result.stdout:
+                        try:
+                            scan_json = json.loads(result.stdout)
+                            trivy_test['json_keys'] = list(scan_json.keys())
+                            trivy_test['results_count'] = len(scan_json.get('Results', []))
+                        except json.JSONDecodeError:
+                            trivy_test['json_error'] = 'Invalid JSON'
+                            
+                except Exception as e:
+                    trivy_test['error'] = str(e)
+            
+            return jsonify({
+                'namespace': namespace,
+                'images_from_function': images,
+                'image_count': len(images),
+                'acr_images': acr_images,
+                'acr_count': len(acr_images),
+                'pod_count': len(pods.items),
+                'pod_details': pod_info,
+                'trivy_test': trivy_test,
+                'acr_config': {
+                    'registry_name': ACR_REGISTRY_NAME,
+                    'has_credentials': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID),
+                    'token_valid': is_acr_token_valid()
+                }
+            })
+        except Exception as e:
+            return jsonify({'error': str(e), 'error_type': type(e).__name__})
+
+    @app.route("/test-trivy")
+    def test_trivy():
+        """Test trivy installation and basic functionality"""
+        try:
+            version_result = subprocess.run(
+                ["trivy", "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10
+            )
+            
+            test_result = subprocess.run(
+                ["trivy", "image", "--format", "json", "alpine:latest"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60
+            )
+            
+            return jsonify({
+                'trivy_version': {
+                    'return_code': version_result.returncode,
+                    'stdout': version_result.stdout,
+                    'stderr': version_result.stderr
+                },
+                'trivy_test': {
+                    'return_code': test_result.returncode,
+                    'stdout_length': len(test_result.stdout),
+                    'stderr': test_result.stderr,
+                    'has_json_output': bool(test_result.stdout.strip())
+                },
+                'acr_status': {
+                    'authenticated': is_acr_token_valid(),
+                    'registry': ACR_REGISTRY_NAME,
+                    'has_config': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)
+                }
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)})
+
+    @app.route("/test-acr")
+    def test_acr():
+        """Test ACR authentication"""
+        try:
+            authenticate_with_acr()
+            return jsonify({
+                'status': 'success',
+                'message': 'ACR authentication successful',
+                'registry': ACR_REGISTRY_NAME,
+                'token_valid': is_acr_token_valid()
+            })
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e),
+                'registry': ACR_REGISTRY_NAME,
+                'has_config': bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)
+            })
+
+    @app.route("/health")
+    def health():
+        return jsonify({
+            "status": "healthy", 
+            "timestamp": datetime.now().isoformat(),
+            "acr_authenticated": is_acr_token_valid()
+        })
+
+    if __name__ == "__main__":
+        log_message("🚀 Starting Enhanced Trivy UI Application with ACR Support")
+        log_message("📊 Debug endpoints available:")
+        log_message("   - /debug/<namespace> - Debug namespace scanning")
+        log_message("   - /test-trivy - Test Trivy installation")
+        log_message("   - /test-acr - Test ACR authentication")
+        log_message("🔐 ACR Configuration:")
+        log_message(f"   - Registry: {ACR_REGISTRY_NAME}")
+        log_message(f"   - Has credentials: {bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)}")
+        
+        # Test ACR authentication on startup
+        if ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID:
+            try:
+                authenticate_with_acr()
+                log_message("✅ Initial ACR authentication successful")
+            except Exception as e:
+                log_message(f"⚠️ Initial ACR authentication failed: {e}", "WARNING")
+        else:
+            log_message("⚠️ ACR credentials not configured - ACR images will fail to scan", "WARNING")
+        
+        app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
+
+  requirements.txt: |
+    kubernetes==28.1.0
+    Flask==2.0.3
+    Werkzeug==2.0.3 }
+            .filter-label { font-weight: 600; color: #555; font-size: 0.9rem; text-transform: uppercase; }
+            .filter-input, .filter-select {
+                padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 8px;
+                font-size: 1rem; transition: all 0.3s ease; background: white;
+            }
+            .filter-input:focus, .filter-select:focus {
+                outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            }
+            .filter-actions { display: flex; gap: 10px; justify-content: flex-end; }
+            .filter-btn {
+                padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; 
+                font-size: 1rem; font-weight: 500; transition: all 0.3s ease;
+                display: flex; align-items: center; gap: 8px;
+            }
+            .filter-btn-primary { background: #667eea; color: white; }
+            .filter-btn-secondary { background: #6c757d; color: white; }
+            .filter-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.2); }
+            .active-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
+            .filter-tag {
+                background: #e9ecef; padding: 5px 12px; border-radius: 20px; font-size: 0.85rem;
+                display: flex; align-items: center; gap: 5px; color: #495057;
+            }
+            .filter-tag .remove { cursor: pointer; color: #dc3545; font-weight: bold; }
+            .filter-tag .remove:hover { color: #c82333; }
+            
+            .history { 
+                background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
+                overflow: hidden;
+            }
+            .history-header { 
+                background: linear-gradient(45deg, #667eea, #764ba2); color: white; 
+                padding: 25px; text-align: center;
+            }
+            .history-header h2 { font-size: 1.8rem; margin-bottom: 5px; }
+            .history-grid { display: grid; gap: 20px; padding: 25px; }
+            .history-card { 
+                background: #f8f9fa; border-radius: 12px; padding: 20px; 
+                border: 1px solid #e9ecef; transition: all 0.3s ease;
+            }
+            .history-card:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,0,0,0.1); }
+            .history-card.hidden { display: none; }
+            .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+            .namespace-name { 
+                font-size: 1.3rem; font-weight: 600; color: #333; 
+                display: flex; align-items: center; gap: 10px;
+            }
+            .status-badge { 
+                padding: 5px 12px; border-radius: 20px; font-size: 0.85rem; 
+                font-weight: 600; text-transform: uppercase;
+            }
+            .status-scanning { background: #fff3cd; color: #856404; }
+            .status-completed { background: #d4edda; color: #155724; }
+            .status-failed { background: #f8d7da; color: #721c24; }
+            .vuln-stats { 
+                display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); 
+                gap: 10px; margin-bottom: 15px;
+            }
+            .vuln-stat { text-align: center; padding: 10px; border-radius: 8px; font-weight: 600; }
+            .critical { background: #dc3545; color: white; }
+            .high { background: #fd7e14; color: white; }
+            .medium { background: #ffc107; color: #212529; }
+            .low { background: #28a745; color: white; }
+            .unknown { background: #6c757d; color: white; }
+            .card-actions { display: flex; gap: 10px; justify-content: flex-end; }
+            .btn-small { 
+                padding: 8px 16px; font-size: 0.9rem; border-radius: 6px; 
+                text-decoration: none; color: white; background: #6c757d; 
+                transition: all 0.2s ease;
+            }
+            .btn-primary { background: #007bff; }
+            .btn-success { background: #28a745; }
+            .btn-small:hover { transform: translateY(-1px); opacity: 0.9; }
+            .metadata-info { font-size: 0.9rem; color: #666; margin-top: 10px; }
+            .empty-state { text-align: center; padding: 60px 20px; color: #666; }
+            .empty-state i { font-size: 4rem; margin-bottom: 20px; opacity: 0.5; }
+            .scanning-indicator { display: inline-flex; align-items: center; gap: 8px; }
+            .spinner { 
+                width: 16px; height: 16px; border: 2px solid #f3f3f3; 
+                border-top: 2px solid #856404; border-radius: 50%; 
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            .results-summary { 
+                background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 10px;
+                border-left: 4px solid #667eea;
+            }
+            .results-summary-text { font-size: 0.9rem; color: #555; }
+            @media (max-width: 768px) {
+                .container { padding: 10px; }
+                .header h1 { font-size: 2rem; }
+                .form-group { flex-direction: column; }
+                .form-group input { min-width: auto; width: 100%; }
+                .filter-grid { grid-template-columns: 1fr; }
+                .filter-actions { flex-direction: column; }
+                .vuln-stats { grid-template-columns: repeat(5, 1fr); gap: 5px; }
+                .vuln-stat { padding: 8px 4px; font-size: 0.8rem; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1><i class="fas fa-shield-alt"></i> Trivy Security Scanner</h1>
+                <p>Kubernetes Container Vulnerability Assessment</p>
+            </div>
+            
+            <div class="scan-form">
+                <form method="POST">
+                    {% if error %}
+                    <div class="error">
+                        <i class="fas fa-exclamation-triangle"></i> {{ error }}
+                    </div>
+                    {% endif %}
+                    <div class="form-group">
+                        <input name="namespace" placeholder="Enter Kubernetes Namespace" required />
+                        <button type="submit" class="btn">
+                            <i class="fas fa-search"></i> Start Scan
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Enhanced Filters Section -->
+            <div class="filters-section" id="filtersSection">
+                <div class="filters-header">
+                    <h3><i class="fas fa-filter"></i> Filters</h3>
+                </div>
+                <div class="filter-grid">
+                    <div class="filter-group">
+                        <label class="filter-label">Namespace</label>
+                        <input type="text" id="namespaceFilter" class="filter-input" placeholder="Filter by namespace...">
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Vulnerability Level</label>
+                        <select id="severityFilter" class="filter-select">
+                            <option value="">All Severities</option>
+                            <option value="CRITICAL">Critical</option>
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                            <option value="UNKNOWN">Unknown</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Status</label>
+                        <select id="statusFilter" class="filter-select">
+                            <option value="">All Statuses</option>
+                            <option value="scanning">Scanning</option>
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Minimum Vulnerabilities</label>
+                        <input type="number" id="minVulnsFilter" class="filter-input" placeholder="Min count..." min="0">
+                    </div>
+                </div>
+                <div class="filter-actions">
+                    <button onclick="clearFilters()" class="filter-btn filter-btn-secondary">
+                        <i class="fas fa-times"></i> Clear Filters
+                    </button>
+                    <button onclick="applyFilters()" class="filter-btn filter-btn-primary">
+                        <i class="fas fa-search"></i> Apply Filters
+                    </button>
+                </div>
+                <div class="active-filters" id="activeFilters"></div>
+            </div>
+
+            {% if scan_history %}
+            <div class="history">
+                <div class="history-header">
+                    <h2><i class="fas fa-history"></i> Scan History</h2>
+                    <p>View and manage your security scans</p>
+                </div>
+                <div class="history-grid" id="historyGrid">
+                    {% for scan in scan_history %}
+                    <div class="history-card" 
+                         data-namespace="{{ scan.namespace }}" 
+                         data-status="{{ scan.metadata.get('status', 'unknown') }}"
+                         data-critical="{{ scan.stats.CRITICAL }}"
+                         data-high="{{ scan.stats.HIGH }}"
+                         data-medium="{{ scan.stats.MEDIUM }}"
+                         data-low="{{ scan.stats.LOW }}"
+                         data-unknown="{{ scan.stats.UNKNOWN }}"
+                         data-total-vulns="{{ scan.total_vulnerabilities }}">
+                        <div class="card-header">
+                            <div class="namespace-name">
+                                <i class="fas fa-cube"></i>
+                                {{ scan.namespace }}
+                            </div>
+                            <div class="status-badge status-{{ scan.metadata.get('status', 'unknown') }}">
+                                {% if scan.is_scanning %}
+                                    <div class="scanning-indicator">
+                                        <div class="spinner"></div>
+                                        Scanning
+                                    </div>
+                                {% else %}
+                                    {{ scan.metadata.get('status', 'Unknown').title() }}
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if scan.total_vulnerabilities > 0 %}
+                        <div class="vuln-stats">
+                            <div class="vuln-stat critical" title="Critical Vulnerabilities">
+                                <div>{{ scan.stats.CRITICAL }}</div>
+                                <small>CRIT</small>
+                            </div>
+                            <div class="vuln-stat high" title="High Vulnerabilities">
+                                <div>{{ scan.stats.HIGH }}</div>
+                                <small>HIGH</small>
+                            </div>
+                            <div class="vuln-stat medium" title="Medium Vulnerabilities">
+                                <div>{{ scan.stats.MEDIUM }}</div>
+                                <small>MED</small>
+                            </div>
+                            <div class="vuln-stat low" title="Low Vulnerabilities">
+                                <div>{{ scan.stats.LOW }}</div>
+                                <small>LOW</small>
+                            </div>
+                            <div class="vuln-stat unknown" title="Unknown Vulnerabilities">
+                                <div>{{ scan.stats.UNKNOWN }}</div>
+                                <small>UNK</small>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="metadata-info">
+                            {% if scan.metadata.get('start_time') %}
+                                <i class="fas fa-clock"></i> 
+                                Scanned: {{ scan.metadata.start_time[:19].replace('T', ' ') }}
+                            {% endif %}
+                            {% if scan.metadata.get('total_images') %}
+                                | <i class="fas fa-images"></i> 
+                                Images: {{ scan.metadata.get('scanned_images', 0) }}/{{ scan.metadata.total_images }}
+                            {% endif %}
+                            {% if scan.total_vulnerabilities > 0 %}
+                                | <i class="fas fa-bug"></i> 
+                                Total Vulnerabilities: {{ scan.total_vulnerabilities }}
+                            {% endif %}
+                        </div>
+
+                        <div class="results-summary">
+                            <div class="results-summary-text">
+                                {% if scan.stats.CRITICAL > 0 %}
+                                    <span style="color: #dc3545;"><strong>{{ scan.stats.CRITICAL }} Critical</strong></span>
+                                {% endif %}
+                                {% if scan.stats.HIGH > 0 %}
+                                    {% if scan.stats.CRITICAL > 0 %}, {% endif %}
+                                    <span style="color: #fd7e14;"><strong>{{ scan.stats.HIGH }} High</strong></span>
+                                {% endif %}
+                                {% if scan.stats.MEDIUM > 0 %}
+                                    {% if scan.stats.CRITICAL > 0 or scan.stats.HIGH > 0 %}, {% endif %}
+                                    <span style="color: #ffc107;"><strong>{{ scan.stats.MEDIUM }} Medium</strong></span>
+                                {% endif %}
+                                {% if scan.total_vulnerabilities == 0 %}
+                                    <span style="color: #28a745;"><i class="fas fa-shield-alt"></i> No vulnerabilities found!</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="card-actions">
+                            {% if scan.is_scanning %}
+                                <a href="/scan/{{ scan.namespace }}" class="btn-small btn-primary">
+                                    <i class="fas fa-eye"></i> Watch Scan
+                                </a>
+                            {% else %}
+                                <a href="/results/{{ scan.namespace }}" class="btn-small btn-success">
+                                    <i class="fas fa-chart-bar"></i> View Results
+                                </a>
+                                <a href="/scan/{{ scan.namespace }}" class="btn-small">
+                                    <i class="fas fa-redo"></i> Rescan
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            <div class="history">
+                <div class="history-header">
+                    <h2><i class="fas fa-history"></i> Scan History</h2>
+                    <p>View and manage your security scans</p>
+                </div>
+                <div class="empty-state">
+                    <i class="fas fa-search"></i>
+                    <h3>No scans yet</h3>
+                    <p>Start by entering a Kubernetes namespace above to begin your first security scan.</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <script>
+            // Show filters if there are scan results
+            const scanHistory = {{ scan_history | tojson if scan_history else '[]' }};
+            if (scanHistory && scanHistory.length > 0) {
+                document.getElementById('filtersSection').classList.add('show');
+            }
+
+            let currentFilters = {
+                namespace: '',
+                severity: '',
+                status: '',
+                minVulns: ''
+            };
+
+            function applyFilters() {
+                const namespaceFilter = document.getElementById('namespaceFilter').value.toLowerCase().trim();
+                const severityFilter = document.getElementById('severityFilter').value;
+                const statusFilter = document.getElementById('statusFilter').value;
+                const minVulnsFilter = document.getElementById('minVulnsFilter').value;
+
+                currentFilters = {
+                    namespace: namespaceFilter,
+                    severity: severityFilter,
+                    status: statusFilter,
+                    minVulns: minVulnsFilter
+                };
+
+                const cards = document.querySelectorAll('.history-card');
+                let visibleCount = 0;
+
+                cards.forEach(card => {
+                    const namespace = card.querySelector('.namespace-name').textContent.toLowerCase().trim();
+                    const status = card.dataset.status;
+                    const totalVulns = parseInt(card.dataset.totalVulns) || 0;
+                    
+                    const critical = parseInt(card.dataset.critical) || 0;
+                    const high = parseInt(card.dataset.high) || 0;
+                    const medium = parseInt(card.dataset.medium) || 0;
+                    const low = parseInt(card.dataset.low) || 0;
+                    const unknown = parseInt(card.dataset.unknown) || 0;
+
+                    let shouldShow = true;
+
+                    if (namespaceFilter && !namespace.includes(namespaceFilter)) {
+                        shouldShow = false;
+                    }
+
+                    if (statusFilter && status !== statusFilter) {
+                        shouldShow = false;
+                    }
+
+                    if (minVulnsFilter && totalVulns < parseInt(minVulnsFilter)) {
+                        shouldShow = false;
+                    }
+
+                    if (severityFilter) {
+                        let hasRequiredSeverity = false;
+                        switch (severityFilter) {
+                            case 'CRITICAL': hasRequiredSeverity = critical > 0; break;
+                            case 'HIGH': hasRequiredSeverity = high > 0; break;
+                            case 'MEDIUM': hasRequiredSeverity = medium > 0; break;
+                            case 'LOW': hasRequiredSeverity = low > 0; break;
+                            case 'UNKNOWN': hasRequiredSeverity = unknown > 0; break;
+                        }
+                        if (!hasRequiredSeverity) {
+                            shouldShow = false;
+                        }
+                    }
+
+                    if (shouldShow) {
+                        card.classList.remove('hidden');
+                        visibleCount++;
+                    } else {
+                        card.classList.add('hidden');
+                    }
+                });
+
+                updateActiveFilters();
+                console.log(`Filters applied. Showing ${visibleCount} of ${cards.length} scans.`);
+            }
+
+            function clearFilters() {
+                document.getElementById('namespaceFilter').value = '';
+                document.getElementById('severityFilter').value = '';
+                document.getElementById('statusFilter').value = '';
+                document.getElementById('minVulnsFilter').value = '';
+                
+                currentFilters = { namespace: '', severity: '', status: '', minVulns: '' };
+
+                const cards = document.querySelectorAll('.history-card');
+                cards.forEach(card => card.classList.remove('hidden'));
+
+                updateActiveFilters();
+                console.log('All filters cleared');
+            }
+
+            function updateActiveFilters() {
+                const activeFiltersContainer = document.getElementById('activeFilters');
+                activeFiltersContainer.innerHTML = '';
+
+                Object.keys(currentFilters).forEach(key => {
+                    const value = currentFilters[key];
+                    if (value) {
+                        const tag = document.createElement('div');
+                        tag.className = 'filter-tag';
+                        tag.innerHTML = `
+                            <span>${key}: ${value}</span>
+                            <span class="remove" onclick="removeFilter('${key}')">&times;</span>
+                        `;
+                        activeFiltersContainer.appendChild(tag);
+                    }
+                });
+            }
+
+            function removeFilter(filterKey) {
+                switch (filterKey) {
+                    case 'namespace': document.getElementById('namespaceFilter').value = ''; break;
+                    case 'severity': document.getElementById('severityFilter').value = ''; break;
+                    case 'status': document.getElementById('statusFilter').value = ''; break;
+                    case 'minVulns': document.getElementById('minVulnsFilter').value = ''; break;
+                }
+                applyFilters();
+            }
+
+            document.getElementById('namespaceFilter').addEventListener('input', applyFilters);
+            document.getElementById('severityFilter').addEventListener('change', applyFilters);
+            document.getElementById('statusFilter').addEventListener('change', applyFilters);
+            document.getElementById('minVulnsFilter').addEventListener('input', applyFilters);
+
+            setTimeout(() => {
+                const hasActiveScans = document.querySelector('.status-scanning');
+                if (hasActiveScans) { location.reload(); }
+            }, 30000);
+
+            console.log('Trivy Scanner interface loaded with enhanced filtering');
+        </script>
+    </body>
+    </html>
+    '''
+
+    SCAN_HTML = '''
     <!DOCTYPE html>
     <html>
     <head>
@@ -1452,7 +1836,6 @@ data:
             const progressBar = document.getElementById('progressBar');
             const completionBanner = document.getElementById('completionBanner');
 
-            // Connect to log stream
             const source = new EventSource('/logs/{{ namespace }}');
 
             source.onmessage = function(event) {
@@ -1468,17 +1851,13 @@ data:
                     updateStats();
                     
                 } catch (e) {
-                    // Handle legacy log format (plain text)
                     addLegacyLogEntry(event.data);
                 }
             };
 
             source.onerror = function() {
                 if (isScanning) {
-                    // Try to reconnect after 5 seconds
-                    setTimeout(() => {
-                        location.reload();
-                    }, 5000);
+                    setTimeout(() => location.reload(), 5000);
                 }
             };
 
@@ -1521,7 +1900,6 @@ data:
             }
 
             function updateStats() {
-                // Fetch current scan status
                 fetch(`/api/scan-status/{{ namespace }}`)
                     .then(response => response.json())
                     .then(data => {
@@ -1535,14 +1913,12 @@ data:
                         document.getElementById('failedImages').textContent = failedImages;
                         document.getElementById('logCount').textContent = logCount;
 
-                        // Update progress bar
                         if (totalImages > 0) {
                             const progress = (scannedImages / totalImages) * 100;
                             progressBar.style.width = progress + '%';
                             progressBar.textContent = Math.round(progress) + '%';
                         }
 
-                        // Update scanning status
                         isScanning = data.scanning;
                         if (!isScanning && metadata.status === 'completed') {
                             handleScanComplete();
@@ -1558,7 +1934,6 @@ data:
                 statusBadge.innerHTML = '<div class="status-completed">Completed</div>';
                 completionBanner.classList.add('show');
                 
-                // Auto-redirect to results after 3 seconds
                 setTimeout(() => {
                     window.location.href = '/results/{{ namespace }}';
                 }, 3000);
@@ -1569,7 +1944,6 @@ data:
                 autoScrollBtn.innerHTML = autoScroll 
                     ? '<i class="fas fa-arrow-down"></i> Auto Scroll: ON'
                     : '<i class="fas fa-pause"></i> Auto Scroll: OFF';
-                autoScrollBtn.className = autoScroll ? 'log-btn auto-scroll' : 'log-btn';
             }
 
             function clearLogs() {
@@ -1578,11 +1952,60 @@ data:
                 document.getElementById('logCount').textContent = '0';
             }
 
-            // Update stats every 2 seconds
             setInterval(updateStats, 2000);
-
-            // Initial stats update
             updateStats();
         </script>
     </body>
     </html>
+    '''
+
+    RESULTS_HTML = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Results - {{ namespace }} - Trivy Scanner</title>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh; color: #333;
+            }
+            .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+            .header {
+                background: white; border-radius: 15px; padding: 25px; margin-bottom: 25px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex;
+                justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;
+            }
+            .header-left { display: flex; align-items: center; gap: 15px; }
+            .namespace-icon {
+                width: 60px; height: 60px; background: linear-gradient(45deg, #667eea, #764ba2);
+                border-radius: 12px; display: flex; align-items: center; justify-content: center;
+                color: white; font-size: 1.5rem;
+            }
+            .header-info h1 { font-size: 1.8rem; margin-bottom: 5px; color: #333; }
+            .header-info p { color: #666; font-size: 1rem; }
+            .header-right { display: flex; gap: 10px; flex-wrap: wrap; }
+            .btn {
+                padding: 12px 20px; border: none; border-radius: 8px; font-size: 1rem;
+                cursor: pointer; text-decoration: none; display: inline-flex;
+                align-items: center; gap: 8px; transition: all 0.3s ease; font-weight: 500;
+            }
+            .btn-primary { background: #007bff; color: white; }
+            .btn-secondary { background: #6c757d; color: white; }
+            .btn-warning { background: #ffc107; color: #212529; }
+            .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+
+            .filters-section {
+                background: white; border-radius: 15px; padding: 25px; margin-bottom: 25px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            }
+            .filters-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+            .filters-header h3 { color: #333; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
+            .filter-toggle { 
+                background: #667eea; color: white; border: none; padding: 8px 16px; 
+                border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+            }
+            .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+            .filter-group { display: flex; flex-direction: column; gap: 8px;
