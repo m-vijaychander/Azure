@@ -1,21 +1,8 @@
-apt install \
-    ca-certificates \
-    curl \
-    gnupg \
-    lsb-release -y
+az login --service-principal   --username $CLIENT_ID   --password $CLIENT_SECRET   --tenant $TENANT_ID
 
-mkdir -p /etc/apt/keyrings
+TOKEN=$(az acr login -n azops --expose-token --output tsv --query accessToken)
 
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu \
-  $(lsb_release -cs) stable" | \
-  tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-apt update
-
-apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
-
+trivy image \
+  --username 00000000-0000-0000-0000-000000000000 \
+  --password $TOKEN \
+  azops.azurecr.io/nginx
