@@ -1959,584 +1959,584 @@ data:
     </html>
     '''
 
-    RESULTS_HTML = '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Results - {{ namespace }} - Trivy Scanner</title>
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh; color: #333;
-            }
-            .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-            .header {
-                background: white; border-radius: 15px; padding: 25px; margin-bottom: 25px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex;
-                justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;
-            }
-            .header-left { display: flex; align-items: center; gap: 15px; }
-            .namespace-icon {
-                width: 60px; height: 60px; background: linear-gradient(45deg, #667eea, #764ba2);
-                border-radius: 12px; display: flex; align-items: center; justify-content: center;
-                color: white; font-size: 1.5rem;
-            }
-            .header-info h1 { font-size: 1.8rem; margin-bottom: 5px; color: #333; }
-            .header-info p { color: #666; font-size: 1rem; }
-            .header-right { display: flex; gap: 10px; flex-wrap: wrap; }
-            .btn {
-                padding: 12px 20px; border: none; border-radius: 8px; font-size: 1rem;
-                cursor: pointer; text-decoration: none; display: inline-flex;
-                align-items: center; gap: 8px; transition: all 0.3s ease; font-weight: 500;
-            }
-            .btn-primary { background: #007bff; color: white; }
-            .btn-secondary { background: #6c757d; color: white; }
-            .btn-warning { background: #ffc107; color: #212529; }
-            .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+			 RESULTS_HTML = '''
+				<!DOCTYPE html>
+				<html>
+				<head>
+								<title>Results - {{ namespace }} - Trivy Scanner</title>
+								<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+								<style>
+												* { margin: 0; padding: 0; box-sizing: border-box; }
+												body {
+																font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+																background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+																min-height: 100vh; color: #333;
+												}
+												.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+												.header {
+																background: white; border-radius: 15px; padding: 25px; margin-bottom: 25px;
+																box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex;
+																justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;
+												}
+												.header-left { display: flex; align-items: center; gap: 15px; }
+												.namespace-icon {
+																width: 60px; height: 60px; background: linear-gradient(45deg, #667eea, #764ba2);
+																border-radius: 12px; display: flex; align-items: center; justify-content: center;
+																color: white; font-size: 1.5rem;
+												}
+												.header-info h1 { font-size: 1.8rem; margin-bottom: 5px; color: #333; }
+												.header-info p { color: #666; font-size: 1rem; }
+												.header-right { display: flex; gap: 10px; flex-wrap: wrap; }
+												.btn {
+																padding: 12px 20px; border: none; border-radius: 8px; font-size: 1rem;
+																cursor: pointer; text-decoration: none; display: inline-flex;
+																align-items: center; gap: 8px; transition: all 0.3s ease; font-weight: 500;
+												}
+												.btn-primary { background: #007bff; color: white; }
+												.btn-secondary { background: #6c757d; color: white; }
+												.btn-warning { background: #ffc107; color: #212529; }
+												.btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
 
-            /* Enhanced Filters Section */
-            .filters-section {
-                background: white; border-radius: 15px; padding: 25px; margin-bottom: 25px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            }
-            .filters-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-            .filters-header h3 { color: #333; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
-            .filter-toggle { 
-                background: #667eea; color: white; border: none; padding: 8px 16px; 
-                border-radius: 6px; cursor: pointer; font-size: 0.9rem;
-            }
-            .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-            .filter-group { display: flex; flex-direction: column; gap: 8px; }
-            .filter-label { font-weight: 600; color: #555; font-size: 0.9rem; text-transform: uppercase; }
-            .filter-input, .filter-select {
-                padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
-                font-size: 0.95rem; transition: all 0.3s ease; background: white;
-            }
-            .filter-input:focus, .filter-select:focus {
-                outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-            }
-            .filter-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
-            .filter-btn {
-                padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; 
-                font-size: 0.9rem; font-weight: 500; transition: all 0.3s ease;
-                display: flex; align-items: center; gap: 8px;
-            }
-            .filter-btn-primary { background: #667eea; color: white; }
-            .filter-btn-secondary { background: #6c757d; color: white; }
-            .filter-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.2); }
-            .active-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
-            .filter-tag {
-                background: #e9ecef; padding: 4px 10px; border-radius: 16px; font-size: 0.8rem;
-                display: flex; align-items: center; gap: 5px; color: #495057;
-            }
-            .filter-tag .remove { cursor: pointer; color: #dc3545; font-weight: bold; margin-left: 5px; }
-            .filter-tag .remove:hover { color: #c82333; }
-            .results-summary {
-                background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;
-                display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;
-            }
-            .summary-text { font-weight: 500; color: #495057; }
-            .summary-count { background: #667eea; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.9rem; }
+												/* Enhanced Filters Section */
+												.filters-section {
+																background: white; border-radius: 15px; padding: 25px; margin-bottom: 25px;
+																box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+												}
+												.filters-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+												.filters-header h3 { color: #333; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
+												.filter-toggle { 
+																background: #667eea; color: white; border: none; padding: 8px 16px; 
+																border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+												}
+												.filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+												.filter-group { display: flex; flex-direction: column; gap: 8px; }
+												.filter-label { font-weight: 600; color: #555; font-size: 0.9rem; text-transform: uppercase; }
+												.filter-input, .filter-select {
+																padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
+																font-size: 0.95rem; transition: all 0.3s ease; background: white;
+												}
+												.filter-input:focus, .filter-select:focus {
+																outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+												}
+												.filter-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+												.filter-btn {
+																padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; 
+																font-size: 0.9rem; font-weight: 500; transition: all 0.3s ease;
+																display: flex; align-items: center; gap: 8px;
+												}
+												.filter-btn-primary { background: #667eea; color: white; }
+												.filter-btn-secondary { background: #6c757d; color: white; }
+												.filter-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.2); }
+												.active-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
+												.filter-tag {
+																background: #e9ecef; padding: 4px 10px; border-radius: 16px; font-size: 0.8rem;
+																display: flex; align-items: center; gap: 5px; color: #495057;
+												}
+												.filter-tag .remove { cursor: pointer; color: #dc3545; font-weight: bold; margin-left: 5px; }
+												.filter-tag .remove:hover { color: #c82333; }
+												.results-summary {
+																background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;
+																display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;
+												}
+												.summary-text { font-weight: 500; color: #495057; }
+												.summary-count { background: #667eea; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.9rem; }
 
-            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-            .stat-card {
-                background: white; padding: 25px; border-radius: 12px;
-                box-shadow: 0 5px 20px rgba(0,0,0,0.1); text-align: center; transition: transform 0.3s ease;
-            }
-            .stat-card:hover { transform: translateY(-5px); }
-            .stat-icon {
-                width: 50px; height: 50px; border-radius: 50%; display: flex;
-                align-items: center; justify-content: center; margin: 0 auto 15px;
-                font-size: 1.2rem; color: white;
-            }
-            .stat-critical .stat-icon { background: #dc3545; }
-            .stat-high .stat-icon { background: #fd7e14; }
-            .stat-medium .stat-icon { background: #ffc107; }
-            .stat-low .stat-icon { background: #28a745; }
-            .stat-total .stat-icon { background: #6f42c1; }
-            .stat-value { font-size: 2rem; font-weight: 700; margin-bottom: 5px; }
-            .stat-label { color: #666; font-size: 0.95rem; text-transform: uppercase; font-weight: 600; }
-            .results-section { display: grid; gap: 25px; }
-            .image-card {
-                background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-                overflow: hidden; transition: transform 0.3s ease;
-            }
-            .image-card:hover { transform: translateY(-2px); }
-            .image-card.hidden { display: none; }
-            .image-header {
-                background: linear-gradient(45deg, #667eea, #764ba2); color: white;
-                padding: 20px; display: flex; justify-content: space-between;
-                align-items: center; flex-wrap: wrap; gap: 15px;
-            }
-            .image-info h3 { font-size: 1.2rem; margin-bottom: 5px; word-break: break-all; }
-            .image-info p { opacity: 0.9; font-size: 0.9rem; }
-            .image-stats { display: flex; gap: 15px; }
-            .image-stat {
-                text-align: center; padding: 8px 12px; background: rgba(255,255,255,0.2);
-                border-radius: 8px;
-            }
-            .image-stat-value { font-size: 1.1rem; font-weight: 700; }
-            .image-stat-label { font-size: 0.7rem; text-transform: uppercase; }
-            .vulnerabilities-table { overflow-x: auto; }
-            .vuln-table { width: 100%; border-collapse: collapse; }
-            .vuln-table th {
-                background: #f8f9fa; padding: 15px; text-align: left; font-weight: 600;
-                border-bottom: 2px solid #dee2e6; position: sticky; top: 0; z-index: 10;
-            }
-            .vuln-table td { padding: 12px 15px; border-bottom: 1px solid #dee2e6; vertical-align: top; }
-            .vuln-table tr:hover { background: #f8f9fa; }
-            .vuln-table tr.hidden { display: none; }
-            .severity-badge {
-                padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;
-                font-weight: 600; text-transform: uppercase; white-space: nowrap;
-            }
-            .severity-CRITICAL { background: #dc3545; color: white; }
-            .severity-HIGH { background: #fd7e14; color: white; }
-            .severity-MEDIUM { background: #ffc107; color: #212529; }
-            .severity-LOW { background: #28a745; color: white; }
-            .severity-UNKNOWN { background: #6c757d; color: white; }
-            .vuln-id {
-                font-family: monospace; background: #f8f9fa; padding: 2px 6px;
-                border-radius: 4px; font-size: 0.85rem;
-            }
-            .package-info { font-family: monospace; font-size: 0.9rem; }
-            .version-badge {
-                background: #e9ecef; padding: 2px 6px; border-radius: 4px;
-                font-size: 0.8rem; margin: 2px; display: inline-block;
-            }
-            .fixed-version { background: #d1ecf1; color: #0c5460; }
-            .vuln-title { font-weight: 500; line-height: 1.3; }
-            .no-results {
-                background: white; border-radius: 12px; padding: 60px 40px;
-                text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-            }
-            .no-results i { font-size: 4rem; color: #28a745; margin-bottom: 20px; }
-            .no-results h3 { font-size: 1.5rem; margin-bottom: 10px; color: #333; }
-            .no-results p { color: #666; font-size: 1.1rem; }
-            .expand-btn {
-                background: none; border: none; color: #007bff; cursor: pointer;
-                font-size: 0.8rem; padding: 2px 5px;
-            }
-            .expand-btn:hover { text-decoration: underline; }
-            .description-full {
-                display: none; margin-top: 8px; font-size: 0.85rem;
-                color: #666; line-height: 1.4;
-            }
-            .description-full.show { display: block; }
-            @media (max-width: 768px) {
-                .container { padding: 10px; }
-                .header { flex-direction: column; text-align: center; }
-                .filter-grid { grid-template-columns: 1fr; }
-                .filter-actions { flex-direction: column; }
-                .stats-grid { grid-template-columns: repeat(2, 1fr); }
-                .image-header { flex-direction: column; text-align: center; }
-                .image-stats { justify-content: center; }
-                .vuln-table { font-size: 0.85rem; }
-                .vuln-table th, .vuln-table td { padding: 8px; }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <div class="header-left">
-                    <div class="namespace-icon"><i class="fas fa-cube"></i></div>
-                    <div class="header-info">
-                        <h1>{{ namespace }}</h1>
-                        <p>Security Scan Results</p>
-                    </div>
-                </div>
-                <div class="header-right">
-                    <button onclick="exportResults()" class="btn btn-warning">
-                        <i class="fas fa-download"></i> Export JSON
-                    </button>
-                    <a href="/scan/{{ namespace }}" class="btn btn-primary">
-                        <i class="fas fa-redo"></i> Rescan
-                    </a>
-                    <a href="/" class="btn btn-secondary">
-                        <i class="fas fa-home"></i> Home
-                    </a>
-                </div>
-            </div>
+												.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+												.stat-card {
+																background: white; padding: 25px; border-radius: 12px;
+																box-shadow: 0 5px 20px rgba(0,0,0,0.1); text-align: center; transition: transform 0.3s ease;
+												}
+												.stat-card:hover { transform: translateY(-5px); }
+												.stat-icon {
+																width: 50px; height: 50px; border-radius: 50%; display: flex;
+																align-items: center; justify-content: center; margin: 0 auto 15px;
+																font-size: 1.2rem; color: white;
+												}
+												.stat-critical .stat-icon { background: #dc3545; }
+												.stat-high .stat-icon { background: #fd7e14; }
+												.stat-medium .stat-icon { background: #ffc107; }
+												.stat-low .stat-icon { background: #28a745; }
+												.stat-total .stat-icon { background: #6f42c1; }
+												.stat-value { font-size: 2rem; font-weight: 700; margin-bottom: 5px; }
+												.stat-label { color: #666; font-size: 0.95rem; text-transform: uppercase; font-weight: 600; }
+												.results-section { display: grid; gap: 25px; }
+												.image-card {
+																background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+																overflow: hidden; transition: transform 0.3s ease;
+												}
+												.image-card:hover { transform: translateY(-2px); }
+												.image-card.hidden { display: none; }
+												.image-header {
+																background: linear-gradient(45deg, #667eea, #764ba2); color: white;
+																padding: 20px; display: flex; justify-content: space-between;
+																align-items: center; flex-wrap: wrap; gap: 15px;
+												}
+												.image-info h3 { font-size: 1.2rem; margin-bottom: 5px; word-break: break-all; }
+												.image-info p { opacity: 0.9; font-size: 0.9rem; }
+												.image-stats { display: flex; gap: 15px; }
+												.image-stat {
+																text-align: center; padding: 8px 12px; background: rgba(255,255,255,0.2);
+																border-radius: 8px;
+												}
+												.image-stat-value { font-size: 1.1rem; font-weight: 700; }
+												.image-stat-label { font-size: 0.7rem; text-transform: uppercase; }
+												.vulnerabilities-table { overflow-x: auto; }
+												.vuln-table { width: 100%; border-collapse: collapse; }
+												.vuln-table th {
+																background: #f8f9fa; padding: 15px; text-align: left; font-weight: 600;
+																border-bottom: 2px solid #dee2e6; position: sticky; top: 0; z-index: 10;
+												}
+												.vuln-table td { padding: 12px 15px; border-bottom: 1px solid #dee2e6; vertical-align: top; }
+												.vuln-table tr:hover { background: #f8f9fa; }
+												.vuln-table tr.hidden { display: none; }
+												.severity-badge {
+																padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;
+																font-weight: 600; text-transform: uppercase; white-space: nowrap;
+												}
+												.severity-CRITICAL { background: #dc3545; color: white; }
+												.severity-HIGH { background: #fd7e14; color: white; }
+												.severity-MEDIUM { background: #ffc107; color: #212529; }
+												.severity-LOW { background: #28a745; color: white; }
+												.severity-UNKNOWN { background: #6c757d; color: white; }
+												.vuln-id {
+																font-family: monospace; background: #f8f9fa; padding: 2px 6px;
+																border-radius: 4px; font-size: 0.85rem;
+												}
+												.package-info { font-family: monospace; font-size: 0.9rem; }
+												.version-badge {
+																background: #e9ecef; padding: 2px 6px; border-radius: 4px;
+																font-size: 0.8rem; margin: 2px; display: inline-block;
+												}
+												.fixed-version { background: #d1ecf1; color: #0c5460; }
+												.vuln-title { font-weight: 500; line-height: 1.3; }
+												.no-results {
+																background: white; border-radius: 12px; padding: 60px 40px;
+																text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+												}
+												.no-results i { font-size: 4rem; color: #28a745; margin-bottom: 20px; }
+												.no-results h3 { font-size: 1.5rem; margin-bottom: 10px; color: #333; }
+												.no-results p { color: #666; font-size: 1.1rem; }
+												.expand-btn {
+																background: none; border: none; color: #007bff; cursor: pointer;
+																font-size: 0.8rem; padding: 2px 5px;
+												}
+												.expand-btn:hover { text-decoration: underline; }
+												.description-full {
+																display: none; margin-top: 8px; font-size: 0.85rem;
+																color: #666; line-height: 1.4;
+												}
+												.description-full.show { display: block; }
+												@media (max-width: 768px) {
+																.container { padding: 10px; }
+																.header { flex-direction: column; text-align: center; }
+																.filter-grid { grid-template-columns: 1fr; }
+																.filter-actions { flex-direction: column; }
+																.stats-grid { grid-template-columns: repeat(2, 1fr); }
+																.image-header { flex-direction: column; text-align: center; }
+																.image-stats { justify-content: center; }
+																.vuln-table { font-size: 0.85rem; }
+																.vuln-table th, .vuln-table td { padding: 8px; }
+												}
+								</style>
+				</head>
+				<body>
+								<div class="container">
+												<div class="header">
+																<div class="header-left">
+																				<div class="namespace-icon"><i class="fas fa-cube"></i></div>
+																				<div class="header-info">
+																								<h1>{{ namespace }}</h1>
+																								<p>Security Scan Results</p>
+																				</div>
+																</div>
+																<div class="header-right">
+																				<button onclick="exportResults()" class="btn btn-warning">
+																								<i class="fas fa-download"></i> Export JSON
+																				</button>
+																				<a href="/scan/{{ namespace }}" class="btn btn-primary">
+																								<i class="fas fa-redo"></i> Rescan
+																				</a>
+																				<a href="/" class="btn btn-secondary">
+																								<i class="fas fa-home"></i> Home
+																				</a>
+																</div>
+												</div>
 
-            <!-- Enhanced Filters Section -->
-            <div class="filters-section">
-                <div class="filters-header">
-                    <h3><i class="fas fa-filter"></i> Vulnerability Filters</h3>
-                    <button class="filter-toggle" onclick="toggleFilters()">
-                        <i class="fas fa-chevron-down" id="filterToggleIcon"></i> Show/Hide
-                    </button>
-                </div>
-                <div class="filter-content" id="filterContent">
-                    <div class="filter-grid">
-                        <div class="filter-group">
-                            <label class="filter-label">Severity Level</label>
-                            <select id="severityFilter" class="filter-select">
-                                <option value="">All Severities</option>
-                                <option value="CRITICAL">Critical</option>
-                                <option value="HIGH">High</option>
-                                <option value="MEDIUM">Medium</option>
-                                <option value="LOW">Low</option>
-                                <option value="UNKNOWN">Unknown</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label class="filter-label">Package Name</label>
-                            <input type="text" id="packageFilter" class="filter-input" placeholder="Filter by package...">
-                        </div>
-                        <div class="filter-group">
-                            <label class="filter-label">Vulnerability ID</label>
-                            <input type="text" id="vulnIdFilter" class="filter-input" placeholder="CVE-2023-xxxx">
-                        </div>
-                        <div class="filter-group">
-                            <label class="filter-label">Image Name</label>
-                            <input type="text" id="imageFilter" class="filter-input" placeholder="Filter by image...">
-                        </div>
-                        <div class="filter-group">
-                            <label class="filter-label">Fix Available</label>
-                            <select id="fixFilter" class="filter-select">
-                                <option value="">All</option>
-                                <option value="yes">Has Fix</option>
-                                <option value="no">No Fix</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label class="filter-label">CVSS Score</label>
-                            <input type="number" id="cvssFilter" class="filter-input" placeholder="Min CVSS score..." min="0" max="10" step="0.1">
-                        </div>
-                    </div>
-                    <div class="filter-actions">
-                        <button onclick="clearAllFilters()" class="filter-btn filter-btn-secondary">
-                            <i class="fas fa-times"></i> Clear All
-                        </button>
-                        <button onclick="applyFilters()" class="filter-btn filter-btn-primary">
-                            <i class="fas fa-search"></i> Apply Filters
-                        </button>
-                    </div>
-                    <div class="active-filters" id="activeFilters"></div>
-                    <div class="results-summary" id="resultsSummary">
-                        <span class="summary-text">Showing all vulnerabilities</span>
-                        <span class="summary-count" id="summaryCount">{{ total_vulnerabilities }} total</span>
-                    </div>
-                </div>
-            </div>
+												<!-- Enhanced Filters Section -->
+												<div class="filters-section">
+																<div class="filters-header">
+																				<h3><i class="fas fa-filter"></i> Vulnerability Filters</h3>
+																				<button class="filter-toggle" onclick="toggleFilters()">
+																								<i class="fas fa-chevron-down" id="filterToggleIcon"></i> Show/Hide
+																				</button>
+																</div>
+																<div class="filter-content" id="filterContent">
+																				<div class="filter-grid">
+																								<div class="filter-group">
+																												<label class="filter-label">Severity Level</label>
+																												<select id="severityFilter" class="filter-select">
+																																<option value="">All Severities</option>
+																																<option value="CRITICAL">Critical</option>
+																																<option value="HIGH">High</option>
+																																<option value="MEDIUM">Medium</option>
+																																<option value="LOW">Low</option>
+																																<option value="UNKNOWN">Unknown</option>
+																												</select>
+																								</div>
+																								<div class="filter-group">
+																												<label class="filter-label">Package Name</label>
+																												<input type="text" id="packageFilter" class="filter-input" placeholder="Filter by package...">
+																								</div>
+																								<div class="filter-group">
+																												<label class="filter-label">Vulnerability ID</label>
+																												<input type="text" id="vulnIdFilter" class="filter-input" placeholder="CVE-2023-xxxx">
+																								</div>
+																								<div class="filter-group">
+																												<label class="filter-label">Image Name</label>
+																												<input type="text" id="imageFilter" class="filter-input" placeholder="Filter by image...">
+																								</div>
+																								<div class="filter-group">
+																												<label class="filter-label">Fix Available</label>
+																												<select id="fixFilter" class="filter-select">
+																																<option value="">All</option>
+																																<option value="yes">Has Fix</option>
+																																<option value="no">No Fix</option>
+																												</select>
+																								</div>
+																								<div class="filter-group">
+																												<label class="filter-label">CVSS Score</label>
+																												<input type="number" id="cvssFilter" class="filter-input" placeholder="Min CVSS score..." min="0" max="10" step="0.1">
+																								</div>
+																				</div>
+																				<div class="filter-actions">
+																								<button onclick="clearAllFilters()" class="filter-btn filter-btn-secondary">
+																												<i class="fas fa-times"></i> Clear All
+																								</button>
+																								<button onclick="applyFilters()" class="filter-btn filter-btn-primary">
+																												<i class="fas fa-search"></i> Apply Filters
+																								</button>
+																				</div>
+																				<div class="active-filters" id="activeFilters"></div>
+																				<div class="results-summary" id="resultsSummary">
+																								<span class="summary-text">Showing all vulnerabilities</span>
+																								<span class="summary-count" id="summaryCount">{{ total_vulnerabilities }} total</span>
+																				</div>
+																</div>
+												</div>
 
-            <div class="stats-grid">
-                <div class="stat-card stat-total">
-                    <div class="stat-icon"><i class="fas fa-bug"></i></div>
-                    <div class="stat-value" id="totalVulnCount">{{ total_vulnerabilities }}</div>
-                    <div class="stat-label">Total Vulnerabilities</div>
-                </div>
-                <div class="stat-card stat-critical">
-                    <div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="stat-value" id="criticalCount">{{ stats.CRITICAL }}</div>
-                    <div class="stat-label">Critical</div>
-                </div>
-                <div class="stat-card stat-high">
-                    <div class="stat-icon"><i class="fas fa-exclamation"></i></div>
-                    <div class="stat-value" id="highCount">{{ stats.HIGH }}</div>
-                    <div class="stat-label">High</div>
-                </div>
-                <div class="stat-card stat-medium">
-                    <div class="stat-icon"><i class="fas fa-minus-circle"></i></div>
-                    <div class="stat-value" id="mediumCount">{{ stats.MEDIUM }}</div>
-                    <div class="stat-label">Medium</div>
-                </div>
-                <div class="stat-card stat-low">
-                    <div class="stat-icon"><i class="fas fa-info-circle"></i></div>
-                    <div class="stat-value" id="lowCount">{{ stats.LOW }}</div>
-                    <div class="stat-label">Low</div>
-                </div>
-            </div>
+												<div class="stats-grid">
+																<div class="stat-card stat-total">
+																				<div class="stat-icon"><i class="fas fa-bug"></i></div>
+																				<div class="stat-value" id="totalVulnCount">{{ total_vulnerabilities }}</div>
+																				<div class="stat-label">Total Vulnerabilities</div>
+																</div>
+																<div class="stat-card stat-critical">
+																				<div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
+																				<div class="stat-value" id="criticalCount">{{ stats.CRITICAL }}</div>
+																				<div class="stat-label">Critical</div>
+																</div>
+																<div class="stat-card stat-high">
+																				<div class="stat-icon"><i class="fas fa-exclamation"></i></div>
+																				<div class="stat-value" id="highCount">{{ stats.HIGH }}</div>
+																				<div class="stat-label">High</div>
+																</div>
+																<div class="stat-card stat-medium">
+																				<div class="stat-icon"><i class="fas fa-minus-circle"></i></div>
+																				<div class="stat-value" id="mediumCount">{{ stats.MEDIUM }}</div>
+																				<div class="stat-label">Medium</div>
+																</div>
+																<div class="stat-card stat-low">
+																				<div class="stat-icon"><i class="fas fa-info-circle"></i></div>
+																				<div class="stat-value" id="lowCount">{{ stats.LOW }}</div>
+																				<div class="stat-label">Low</div>
+																</div>
+												</div>
 
-            {% if results %}
-            <div class="results-section" id="resultsSection">
-                {% for result in results %}
-                <div class="image-card" data-image="{{ result.image }}">
-                    <div class="image-header">
-                        <div class="image-info">
-                            <h3>{{ result.image }}</h3>
-                            <p><i class="fas fa-clock"></i> Scanned: {{ result.scan_time[:19].replace('T', ' ') }}</p>
-                        </div>
-                        <div class="image-stats">
-                            {% set image_stats = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0} %}
-                            {% for vuln in result.vulnerabilities %}
-                                {% set _ = image_stats.update({vuln.severity: image_stats.get(vuln.severity, 0) + 1}) %}
-                            {% endfor %}
-                            
-                            <div class="image-stat">
-                                <div class="image-stat-value">{{ image_stats.CRITICAL }}</div>
-                                <div class="image-stat-label">Critical</div>
-                            </div>
-                            <div class="image-stat">
-                                <div class="image-stat-value">{{ image_stats.HIGH }}</div>
-                                <div class="image-stat-label">High</div>
-                            </div>
-                            <div class="image-stat">
-                                <div class="image-stat-value">{{ image_stats.MEDIUM }}</div>
-                                <div class="image-stat-label">Medium</div>
-                            </div>
-                            <div class="image-stat">
-                                <div class="image-stat-value">{{ image_stats.LOW }}</div>
-                                <div class="image-stat-label">Low</div>
-                            </div>
-                        </div>
-                    </div>
+												{% if results %}
+												<div class="results-section" id="resultsSection">
+																{% for result in results %}
+																<div class="image-card" data-image="{{ result.image }}">
+																				<div class="image-header">
+																								<div class="image-info">
+																												<h3>{{ result.image }}</h3>
+																												<p><i class="fas fa-clock"></i> Scanned: {{ result.scan_time[:19].replace('T', ' ') }}</p>
+																								</div>
+																								<div class="image-stats">
+																												{% set image_stats = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0} %}
+																												{% for vuln in result.vulnerabilities %}
+																																{% set _ = image_stats.update({vuln.severity: image_stats.get(vuln.severity, 0) + 1}) %}
+																												{% endfor %}
+																												
+																												<div class="image-stat">
+																																<div class="image-stat-value">{{ image_stats.CRITICAL }}</div>
+																																<div class="image-stat-label">Critical</div>
+																												</div>
+																												<div class="image-stat">
+																																<div class="image-stat-value">{{ image_stats.HIGH }}</div>
+																																<div class="image-stat-label">High</div>
+																												</div>
+																												<div class="image-stat">
+																																<div class="image-stat-value">{{ image_stats.MEDIUM }}</div>
+																																<div class="image-stat-label">Medium</div>
+																												</div>
+																												<div class="image-stat">
+																																<div class="image-stat-value">{{ image_stats.LOW }}</div>
+																																<div class="image-stat-label">Low</div>
+																												</div>
+																								</div>
+																				</div>
 
-                    {% if result.vulnerabilities %}
-                    <div class="vulnerabilities-table">
-                        <table class="vuln-table">
-                            <thead>
-                                <tr>
-                                    <th>Vulnerability ID</th>
-                                    <th>Severity</th>
-                                    <th>Package</th>
-                                    <th>Installed Version</th>
-                                    <th>Fixed Version</th>
-                                    <th>CVSS Score</th>
-                                    <th>Title</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for vuln in result.vulnerabilities %}
-                                <tr class="vuln-row" 
-                                    data-severity="{{ vuln.severity }}" 
-                                    data-package="{{ vuln.pkg }}" 
-                                    data-vuln-id="{{ vuln.id }}"
-                                    data-image="{{ result.image }}"
-                                    data-has-fix="{{ 'yes' if vuln.fixed else 'no' }}"
-                                    data-cvss="{{ vuln.cvss_score or 0 }}">
-                                    <td><div class="vuln-id">{{ vuln.id }}</div></td>
-                                    <td><span class="severity-badge severity-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
-                                    <td>
-                                        <div class="package-info">{{ vuln.pkg }}</div>
-                                        {% if vuln.target %}
-                                        <small style="color: #666;">{{ vuln.target }}</small>
-                                        {% endif %}
-                                    </td>
-                                    <td><span class="version-badge">{{ vuln.installed or 'N/A' }}</span></td>
-                                    <td>
-                                        {% if vuln.fixed %}
-                                        <span class="version-badge fixed-version">{{ vuln.fixed }}</span>
-                                        {% else %}
-                                        <span style="color: #dc3545; font-size: 0.8rem;">Not Fixed</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if vuln.cvss_score %}
-                                        <div style="display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #666;">
-                                            <i class="fas fa-chart-line"></i>
-                                            {{ "%.1f"|format(vuln.cvss_score) }}
-                                        </div>
-                                        {% else %}
-                                        <span style="color: #666;">N/A</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <div class="vuln-title">{{ vuln.title or 'No title available' }}</div>
-                                        {% if vuln.description %}
-                                        <button class="expand-btn" onclick="toggleDescription(this)">Show Description</button>
-                                        <div class="description-full">{{ vuln.description }}</div>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <div style="padding: 20px; text-align: center; color: #28a745;">
-                        <i class="fas fa-shield-alt" style="font-size: 2rem; margin-bottom: 10px;"></i>
-                        <p>✅ No vulnerabilities found in this image!</p>
-                    </div>
-                    {% endif %}
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="no-results">
-                <i class="fas fa-shield-alt"></i>
-                <h3>No Vulnerabilities Found!</h3>
-                <p>Great news! No security vulnerabilities were detected in the scanned images for namespace <strong>{{ namespace }}</strong>.</p>
-            </div>
-            {% endif %}
+																				{% if result.vulnerabilities %}
+																				<div class="vulnerabilities-table">
+																								<table class="vuln-table">
+																												<thead>
+																																<tr>
+																																				<th>Vulnerability ID</th>
+																																				<th>Severity</th>
+																																				<th>Package</th>
+																																				<th>Installed Version</th>
+																																				<th>Fixed Version</th>
+																																				<th>CVSS Score</th>
+																																				<th>Title</th>
+																																</tr>
+																												</thead>
+																												<tbody>
+																																{% for vuln in result.vulnerabilities %}
+																																<tr class="vuln-row" 
+																																				data-severity="{{ vuln.severity }}" 
+																																				data-package="{{ vuln.pkg }}" 
+																																				data-vuln-id="{{ vuln.id }}"
+																																				data-image="{{ result.image }}"
+																																				data-has-fix="{{ 'yes' if vuln.fixed else 'no' }}"
+																																				data-cvss="{{ vuln.cvss_score or 0 }}">
+																																				<td><div class="vuln-id">{{ vuln.id }}</div></td>
+																																				<td><span class="severity-badge severity-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
+																																				<td>
+																																								<div class="package-info">{{ vuln.pkg }}</div>
+																																								{% if vuln.target %}
+																																								<small style="color: #666;">{{ vuln.target }}</small>
+																																								{% endif %}
+																																				</td>
+																																				<td><span class="version-badge">{{ vuln.installed or 'N/A' }}</span></td>
+																																				<td>
+																																								{% if vuln.fixed %}
+																																								<span class="version-badge fixed-version">{{ vuln.fixed }}</span>
+																																								{% else %}
+																																								<span style="color: #dc3545; font-size: 0.8rem;">Not Fixed</span>
+																																								{% endif %}
+																																				</td>
+																																				<td>
+																																								{% if vuln.cvss_score %}
+																																								<div style="display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #666;">
+																																												<i class="fas fa-chart-line"></i>
+																																												{{ "%.1f"|format(vuln.cvss_score) }}
+																																								</div>
+																																								{% else %}
+																																								<span style="color: #666;">N/A</span>
+																																								{% endif %}
+																																				</td>
+																																				<td>
+																																								<div class="vuln-title">{{ vuln.title or 'No title available' }}</div>
+																																								{% if vuln.description %}
+																																								<button class="expand-btn" onclick="toggleDescription(this)">Show Description</button>
+																																								<div class="description-full">{{ vuln.description }}</div>
+																																								{% endif %}
+																																				</td>
+																																</tr>
+																																{% endfor %}
+																												</tbody>
+																								</table>
+																				</div>
+																				{% else %}
+																				<div style="padding: 20px; text-align: center; color: #28a745;">
+																								<i class="fas fa-shield-alt" style="font-size: 2rem; margin-bottom: 10px;"></i>
+																								<p>✅ No vulnerabilities found in this image!</p>
+																				</div>
+																				{% endif %}
+																</div>
+																{% endfor %}
+												</div>
+												{% else %}
+												<div class="no-results">
+																<i class="fas fa-shield-alt"></i>
+																<h3>No Vulnerabilities Found!</h3>
+																<p>Great news! No security vulnerabilities were detected in the scanned images for namespace <strong>{{ namespace }}</strong>.</p>
+												</div>
+												{% endif %}
 
-            {% if results %}
-            <div style="margin-top: 20px; text-align: center;">
-                <p style="color: white; opacity: 0.8;">
-                    <i class="fas fa-info-circle"></i>
-                    Showing results for {{ results|length }} image(s) with <span id="visibleVulnCount">{{ total_vulnerabilities }}</span> vulnerabilities
-                </p>
-            </div>
-            {% endif %}
-        </div>
+												{% if results %}
+												<div style="margin-top: 20px; text-align: center;">
+																<p style="color: white; opacity: 0.8;">
+																				<i class="fas fa-info-circle"></i>
+																				Showing results for {{ results|length }} image(s) with <span id="visibleVulnCount">{{ total_vulnerabilities }}</span> vulnerabilities
+																</p>
+												</div>
+												{% endif %}
+								</div>
 
-        <script>
-            let currentFilters = { severity: '', package: '', vulnId: '', image: '', fix: '', cvss: '' };
-            let filterExpanded = true;
+								<script>
+												let currentFilters = { severity: '', package: '', vulnId: '', image: '', fix: '', cvss: '' };
+												let filterExpanded = true;
 
-            function toggleFilters() {
-                const content = document.getElementById('filterContent');
-                const icon = document.getElementById('filterToggleIcon');
-                
-                filterExpanded = !filterExpanded;
-                content.style.display = filterExpanded ? 'block' : 'none';
-                icon.className = filterExpanded ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
-            }
+												function toggleFilters() {
+																const content = document.getElementById('filterContent');
+																const icon = document.getElementById('filterToggleIcon');
+																
+																filterExpanded = !filterExpanded;
+																content.style.display = filterExpanded ? 'block' : 'none';
+																icon.className = filterExpanded ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+												}
 
-            function applyFilters() {
-                currentFilters = {
-                    severity: document.getElementById('severityFilter').value,
-                    package: document.getElementById('packageFilter').value.toLowerCase().trim(),
-                    vulnId: document.getElementById('vulnIdFilter').value.toLowerCase().trim(),
-                    image: document.getElementById('imageFilter').value.toLowerCase().trim(),
-                    fix: document.getElementById('fixFilter').value,
-                    cvss: document.getElementById('cvssFilter').value
-                };
+												function applyFilters() {
+																currentFilters = {
+																				severity: document.getElementById('severityFilter').value,
+																				package: document.getElementById('packageFilter').value.toLowerCase().trim(),
+																				vulnId: document.getElementById('vulnIdFilter').value.toLowerCase().trim(),
+																				image: document.getElementById('imageFilter').value.toLowerCase().trim(),
+																				fix: document.getElementById('fixFilter').value,
+																				cvss: document.getElementById('cvssFilter').value
+																};
 
-                let visibleVulns = 0;
-                let stats = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, UNKNOWN: 0 };
-                
-                const vulnRows = document.querySelectorAll('.vuln-row');
-                vulnRows.forEach(row => {
-                    let shouldShow = true;
+																let visibleVulns = 0;
+																let stats = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, UNKNOWN: 0 };
+																
+																const vulnRows = document.querySelectorAll('.vuln-row');
+																vulnRows.forEach(row => {
+																				let shouldShow = true;
 
-                    if (currentFilters.severity && row.dataset.severity !== currentFilters.severity) shouldShow = false;
-                    if (currentFilters.package && !row.dataset.package.toLowerCase().includes(currentFilters.package)) shouldShow = false;
-                    if (currentFilters.vulnId && !row.dataset.vulnId.toLowerCase().includes(currentFilters.vulnId)) shouldShow = false;
-                    if (currentFilters.image && !row.dataset.image.toLowerCase().includes(currentFilters.image)) shouldShow = false;
-                    if (currentFilters.fix && row.dataset.hasFix !== currentFilters.fix) shouldShow = false;
+																				if (currentFilters.severity && row.dataset.severity !== currentFilters.severity) shouldShow = false;
+																				if (currentFilters.package && !row.dataset.package.toLowerCase().includes(currentFilters.package)) shouldShow = false;
+																				if (currentFilters.vulnId && !row.dataset.vulnId.toLowerCase().includes(currentFilters.vulnId)) shouldShow = false;
+																				if (currentFilters.image && !row.dataset.image.toLowerCase().includes(currentFilters.image)) shouldShow = false;
+																				if (currentFilters.fix && row.dataset.hasFix !== currentFilters.fix) shouldShow = false;
 
-                    if (currentFilters.cvss) {
-                        const cvssScore = parseFloat(row.dataset.cvss) || 0;
-                        if (cvssScore < parseFloat(currentFilters.cvss)) shouldShow = false;
-                    }
+																				if (currentFilters.cvss) {
+																								const cvssScore = parseFloat(row.dataset.cvss) || 0;
+																								if (cvssScore < parseFloat(currentFilters.cvss)) shouldShow = false;
+																				}
 
-                    if (shouldShow) {
-                        row.classList.remove('hidden');
-                        visibleVulns++;
-                        stats[row.dataset.severity] = (stats[row.dataset.severity] || 0) + 1;
-                    } else {
-                        row.classList.add('hidden');
-                    }
-                });
+																				if (shouldShow) {
+																								row.classList.remove('hidden');
+																								visibleVulns++;
+																								stats[row.dataset.severity] = (stats[row.dataset.severity] || 0) + 1;
+																				} else {
+																								row.classList.add('hidden');
+																				}
+																});
 
-                const imageCards = document.querySelectorAll('.image-card');
-                imageCards.forEach(card => {
-                    const visibleRows = card.querySelectorAll('.vuln-row:not(.hidden)');
-                    if (visibleRows.length === 0 && card.querySelector('.vuln-row')) {
-                        card.classList.add('hidden');
-                    } else {
-                        card.classList.remove('hidden');
-                    }
-                });
+																const imageCards = document.querySelectorAll('.image-card');
+																imageCards.forEach(card => {
+																				const visibleRows = card.querySelectorAll('.vuln-row:not(.hidden)');
+																				if (visibleRows.length === 0 && card.querySelector('.vuln-row')) {
+																								card.classList.add('hidden');
+																				} else {
+																								card.classList.remove('hidden');
+																				}
+																});
 
-                updateStatCounts(stats, visibleVulns);
-                updateActiveFilters();
-                updateResultsSummary(visibleVulns);
-            }
+																updateStatCounts(stats, visibleVulns);
+																updateActiveFilters();
+																updateResultsSummary(visibleVulns);
+												}
 
-            function clearAllFilters() {
-                document.getElementById('severityFilter').value = '';
-                document.getElementById('packageFilter').value = '';
-                document.getElementById('vulnIdFilter').value = '';
-                document.getElementById('imageFilter').value = '';
-                document.getElementById('fixFilter').value = '';
-                document.getElementById('cvssFilter').value = '';
-                
-                currentFilters = { severity: '', package: '', vulnId: '', image: '', fix: '', cvss: '' };
+												function clearAllFilters() {
+																document.getElementById('severityFilter').value = '';
+																document.getElementById('packageFilter').value = '';
+																document.getElementById('vulnIdFilter').value = '';
+																document.getElementById('imageFilter').value = '';
+																document.getElementById('fixFilter').value = '';
+																document.getElementById('cvssFilter').value = '';
+																
+																currentFilters = { severity: '', package: '', vulnId: '', image: '', fix: '', cvss: '' };
 
-                document.querySelectorAll('.vuln-row').forEach(row => row.classList.remove('hidden'));
-                document.querySelectorAll('.image-card').forEach(card => card.classList.remove('hidden'));
+																document.querySelectorAll('.vuln-row').forEach(row => row.classList.remove('hidden'));
+																document.querySelectorAll('.image-card').forEach(card => card.classList.remove('hidden'));
 
-                const originalStats = { CRITICAL: {{ stats.CRITICAL }}, HIGH: {{ stats.HIGH }}, MEDIUM: {{ stats.MEDIUM }}, LOW: {{ stats.LOW }}, UNKNOWN: {{ stats.UNKNOWN or 0 }} };
-                updateStatCounts(originalStats, {{ total_vulnerabilities }});
-                updateActiveFilters();
-                updateResultsSummary({{ total_vulnerabilities }});
-            }
+																const originalStats = { CRITICAL: {{ stats.CRITICAL }}, HIGH: {{ stats.HIGH }}, MEDIUM: {{ stats.MEDIUM }}, LOW: {{ stats.LOW }}, UNKNOWN: {{ stats.UNKNOWN or 0 }} };
+																updateStatCounts(originalStats, {{ total_vulnerabilities }});
+																updateActiveFilters();
+																updateResultsSummary({{ total_vulnerabilities }});
+												}
 
-            function updateStatCounts(stats, totalVulns) {
-                document.getElementById('totalVulnCount').textContent = totalVulns;
-                document.getElementById('criticalCount').textContent = stats.CRITICAL || 0;
-                document.getElementById('highCount').textContent = stats.HIGH || 0;
-                document.getElementById('mediumCount').textContent = stats.MEDIUM || 0;
-                document.getElementById('lowCount').textContent = stats.LOW || 0;
-                document.getElementById('visibleVulnCount').textContent = totalVulns;
-            }
+												function updateStatCounts(stats, totalVulns) {
+																document.getElementById('totalVulnCount').textContent = totalVulns;
+																document.getElementById('criticalCount').textContent = stats.CRITICAL || 0;
+																document.getElementById('highCount').textContent = stats.HIGH || 0;
+																document.getElementById('mediumCount').textContent = stats.MEDIUM || 0;
+																document.getElementById('lowCount').textContent = stats.LOW || 0;
+																document.getElementById('visibleVulnCount').textContent = totalVulns;
+												}
 
-            function updateActiveFilters() {
-                const activeFiltersContainer = document.getElementById('activeFilters');
-                activeFiltersContainer.innerHTML = '';
+												function updateActiveFilters() {
+																const activeFiltersContainer = document.getElementById('activeFilters');
+																activeFiltersContainer.innerHTML = '';
 
-                Object.keys(currentFilters).forEach(key => {
-                    const value = currentFilters[key];
-                    if (value) {
-                        const tag = document.createElement('div');
-                        tag.className = 'filter-tag';
-                        tag.innerHTML = `<span>${key}: ${value}</span><span class="remove" onclick="removeFilter('${key}')">&times;</span>`;
-                        activeFiltersContainer.appendChild(tag);
-                    }
-                });
-            }
+																Object.keys(currentFilters).forEach(key => {
+																				const value = currentFilters[key];
+																				if (value) {
+																								const tag = document.createElement('div');
+																								tag.className = 'filter-tag';
+																								tag.innerHTML = `<span>${key}: ${value}</span><span class="remove" onclick="removeFilter('${key}')">&times;</span>`;
+																								activeFiltersContainer.appendChild(tag);
+																				}
+																});
+												}
 
-            function updateResultsSummary(visibleCount) {
-                const summaryText = document.querySelector('.summary-text');
-                const summaryCount = document.getElementById('summaryCount');
-                
-                const totalCount = {{ total_vulnerabilities }};
-                summaryText.textContent = visibleCount === totalCount ? 'Showing all vulnerabilities' : 'Showing filtered vulnerabilities';
-                summaryCount.textContent = `${visibleCount} of ${totalCount}`;
-            }
+												function updateResultsSummary(visibleCount) {
+																const summaryText = document.querySelector('.summary-text');
+																const summaryCount = document.getElementById('summaryCount');
+																
+																const totalCount = {{ total_vulnerabilities }};
+																summaryText.textContent = visibleCount === totalCount ? 'Showing all vulnerabilities' : 'Showing filtered vulnerabilities';
+																summaryCount.textContent = `${visibleCount} of ${totalCount}`;
+												}
 
-            function removeFilter(filterKey) {
-                const filterMap = {
-                    severity: 'severityFilter', package: 'packageFilter', vulnId: 'vulnIdFilter',
-                    image: 'imageFilter', fix: 'fixFilter', cvss: 'cvssFilter'
-                };
-                document.getElementById(filterMap[filterKey]).value = '';
-                applyFilters();
-            }
+												function removeFilter(filterKey) {
+																const filterMap = {
+																				severity: 'severityFilter', package: 'packageFilter', vulnId: 'vulnIdFilter',
+																				image: 'imageFilter', fix: 'fixFilter', cvss: 'cvssFilter'
+																};
+																document.getElementById(filterMap[filterKey]).value = '';
+																applyFilters();
+												}
 
-            function toggleDescription(button) {
-                const description = button.nextElementSibling;
-                const isShowing = description.classList.contains('show');
-                
-                description.classList.toggle('show', !isShowing);
-                button.textContent = isShowing ? 'Show Description' : 'Hide Description';
-            }
+												function toggleDescription(button) {
+																const description = button.nextElementSibling;
+																const isShowing = description.classList.contains('show');
+																
+																description.classList.toggle('show', !isShowing);
+																button.textContent = isShowing ? 'Show Description' : 'Hide Description';
+												}
 
-            function exportResults() {
-                fetch(`/api/results/{{ namespace }}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `trivy-scan-{{ namespace }}-${new Date().toISOString().split('T')[0]}.json`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                    })
-                    .catch(error => {
-                        console.error('Export failed:', error);
-                        alert('Failed to export results');
-                    });
-            }
+												function exportResults() {
+																fetch(`/api/results/{{ namespace }}`)
+																				.then(response => response.json())
+																				.then(data => {
+																								const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+																								const url = URL.createObjectURL(blob);
+																								const a = document.createElement('a');
+																								a.href = url;
+																								a.download = `trivy-scan-{{ namespace }}-${new Date().toISOString().split('T')[0]}.json`;
+																								document.body.appendChild(a);
+																								a.click();
+																								document.body.removeChild(a);
+																								URL.revokeObjectURL(url);
+																				})
+																				.catch(error => {
+																								console.error('Export failed:', error);
+																								alert('Failed to export results');
+																				});
+												}
 
-            // Add event listeners for real-time filtering
-            document.getElementById('severityFilter').addEventListener('change', applyFilters);
-            document.getElementById('packageFilter').addEventListener('input', applyFilters);
-            document.getElementById('vulnIdFilter').addEventListener('input', applyFilters);
-            document.getElementById('imageFilter').addEventListener('input', applyFilters);
-            document.getElementById('fixFilter').addEventListener('change', applyFilters);
-            document.getElementById('cvssFilter').addEventListener('input', applyFilters);
+												// Add event listeners for real-time filtering
+												document.getElementById('severityFilter').addEventListener('change', applyFilters);
+												document.getElementById('packageFilter').addEventListener('input', applyFilters);
+												document.getElementById('vulnIdFilter').addEventListener('input', applyFilters);
+												document.getElementById('imageFilter').addEventListener('input', applyFilters);
+												document.getElementById('fixFilter').addEventListener('change', applyFilters);
+												document.getElementById('cvssFilter').addEventListener('input', applyFilters);
 
-            console.log('Enhanced Trivy Results interface loaded with advanced filtering capabilities');
-        </script>
-    </body>
-    </html>
+												console.log('Enhanced Trivy Results interface loaded with advanced filtering capabilities');
+								</script>
+				</body>
+				</html>
