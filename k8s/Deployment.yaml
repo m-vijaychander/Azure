@@ -46,9 +46,9 @@ spec:
           # Setup ACR authentication without Docker
           echo "🔐 Setting up ACR authentication (Docker-free)..."
 
-          export CLIENT_ID="your-service-principal-client-id"
-          export CLIENT_SECRET="your-service-principal-client-secret"  
-          export TENANT_ID="your-azure-tenant-id"
+          export AZURE_CLIENT_ID="your-service-principal-client-id"
+          export AZURE_CLIENT_SECRET="your-service-principal-client-secret"  
+          export AZURE_TENANT_ID="your-azure-tenant-id"
           export ACR_REGISTRY_NAME="azops"  # or your registry name
           
           echo "✅ Trivy ACR authentication configured"
@@ -94,40 +94,43 @@ spec:
         ports:
         - containerPort: 5000
           name: http
-        env:
-        - name: CLIENT_ID
-          value: "your-service-principal-client-id"
-        - name: CLIENT_SECRET
-          value: "your-service-principal-client-secret"
-        - name: TENANT_ID
-          value: "your-azure-tenant-id"
-        - name: ACR_REGISTRY_NAME
-          value: "azops"
         volumeMounts:
         - name: script-volume
           mountPath: /app
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "2Gi"
+            cpu: "1"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "4Gi"
+            cpu: "2"
         env:
         - name: PYTHONUNBUFFERED
           value: "1"
+        - name: AZURE_CLIENT_ID
+          value: "your-service-principal-client-id"
+        - name: AZURE_CLIENT_SECRET
+          value: "your-service-principal-client-secret"
+        - name: AZURE_TENANT_ID
+          value: "your-azure-tenant-id"
+        - name: ACR_REGISTRY_NAME
+          value: "azops"
         livenessProbe:
+          failureThreshold: 5
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 30
-          periodSeconds: 30
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          timeoutSeconds: 30
         readinessProbe:
+          failureThreshold: 3
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 5
-          periodSeconds: 10
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 15
       volumes:
       - name: script-volume
         configMap:
