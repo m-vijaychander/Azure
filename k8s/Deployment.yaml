@@ -61,6 +61,7 @@ spec:
           cp /app/index.html /tmp/app/templates/
           cp /app/results.html /tmp/app/templates/
           cp /app/scan.html /tmp/app/templates/
+          cp /app/all_results.html /tmp/app/templates/
           cd /tmp/app
           echo "✅ Templates copied successfully to /tmp/app"
           
