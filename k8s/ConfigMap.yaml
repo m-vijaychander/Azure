@@ -163,17 +163,78 @@ data:
         return list(images)
 
     def get_vulnerability_stats(results):
-        """Calculate vulnerability statistics"""
+        """Calculate vulnerability statistics with caching"""
         stats = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0, 'UNKNOWN': 0}
         total_vulns = 0
         
         for result in results:
-            for vuln in result.get('vulnerabilities', []):
+            vulns = result.get('vulnerabilities', [])
+            total_vulns += len(vulns)
+            for vuln in vulns:
                 severity = vuln.get('severity', 'UNKNOWN')
                 stats[severity] = stats.get(severity, 0) + 1
-                total_vulns += 1
         
         return stats, total_vulns
+
+    # Add caching for expensive operations
+    from functools import lru_cache
+    import hashlib
+
+    def get_cache_key(namespace, results):
+        """Generate cache key for results"""
+        if not results:
+            return f"empty_{namespace}"
+        # Use number of results and first/last scan time as cache key
+        first_time = results[0].get('scan_time', '')
+        last_time = results[-1].get('scan_time', '')
+        return f"{namespace}_{len(results)}_{hash(first_time + last_time)}"
+
+    # Cache vulnerability stats
+    stats_cache = {}
+
+    def get_cached_vulnerability_stats(results, cache_key):
+        """Get vulnerability stats with caching"""
+        if cache_key in stats_cache:
+            return stats_cache[cache_key]
+        
+        stats, total_vulns = get_vulnerability_stats(results)
+        stats_cache[cache_key] = (stats, total_vulns)
+        return stats, total_vulns
+
+    def paginate_results(results, page=1, per_page=20):
+        """Paginate results for better performance"""
+        start = (page - 1) * per_page
+        end = start + per_page
+        total_pages = (len(results) + per_page - 1) // per_page
+        
+        return {
+            'results': results[start:end],
+            'page': page,
+            'per_page': per_page,
+            'total': len(results),
+            'total_pages': total_pages,
+            'has_prev': page > 1,
+            'has_next': page < total_pages,
+            'prev_page': page - 1 if page > 1 else None,
+            'next_page': page + 1 if page < total_pages else None
+        }
+
+    def limit_vulnerabilities_per_image(results, max_vulns_per_image=100):
+        """Limit vulnerabilities per image for performance"""
+        limited_results = []
+        for result in results:
+            limited_result = result.copy()
+            vulns = result.get('vulnerabilities', [])
+            if len(vulns) > max_vulns_per_image:
+                # Sort by severity and take top vulnerabilities
+                severity_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3, 'UNKNOWN': 4}
+                sorted_vulns = sorted(vulns, key=lambda x: (severity_order.get(x.get('severity', 'UNKNOWN'), 4), x.get('id', '')))
+                limited_result['vulnerabilities'] = sorted_vulns[:max_vulns_per_image]
+                limited_result['vulnerabilities_truncated'] = len(vulns) - max_vulns_per_image
+            else:
+                limited_result['vulnerabilities_truncated'] = 0
+            limited_results.append(limited_result)
+        return limited_results
 
     def scan_image_with_trivy(image):
         """Scan image with Trivy"""
@@ -417,7 +478,11 @@ data:
     def results(namespace):
         results = scan_results_by_namespace.get(namespace, [])
         metadata = scan_metadata_by_namespace.get(namespace, {})
-        stats, total_vulns = get_vulnerability_stats(results)
+        
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)  # Reduced default page size
+        max_vulns = request.args.get('max_vulns', 50, type=int)  # Limit vulnerabilities per image
         
         # Get filter parameters
         severity_filter = request.args.get('severity', 'all')
@@ -443,8 +508,18 @@ data:
                 filtered_result['vulnerabilities'] = filtered_vulns
                 filtered_results.append(filtered_result)
         
-        # Get unique images and severities for filter dropdowns
-        all_images = list(set([r['image'] for r in results]))
+        # Limit vulnerabilities per image for performance
+        limited_results = limit_vulnerabilities_per_image(filtered_results, max_vulns)
+        
+        # Calculate stats with caching
+        cache_key = get_cache_key(namespace, limited_results)
+        stats, total_vulns = get_cached_vulnerability_stats(limited_results, cache_key)
+        
+        # Paginate results
+        pagination = paginate_results(limited_results, page, per_page)
+        
+        # Get unique images and severities for filter dropdowns (limit for performance)
+        all_images = list(set([r['image'] for r in results]))[:50]  # Limit to 50 unique images
         all_severities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
         
         # Get all available namespaces for namespace switcher
@@ -453,7 +528,7 @@ data:
         
         return render_template("results.html", 
                              namespace=namespace, 
-                             results=filtered_results,
+                             results=pagination['results'],
                              all_results=results,
                              metadata=metadata,
                              stats=stats,
@@ -462,7 +537,9 @@ data:
                              all_severities=all_severities,
                              all_namespaces=all_namespaces,
                              current_severity_filter=severity_filter,
-                             current_image_filter=image_filter)
+                             current_image_filter=image_filter,
+                             pagination=pagination,
+                             max_vulns=max_vulns)
 
     @app.route("/results")
     def all_results():
@@ -1517,6 +1594,16 @@ data:
                     </div>
 
                     {% if result.vulnerabilities %}
+                    {% if result.vulnerabilities_truncated > 0 %}
+                    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 15px; border-radius: 6px;">
+                        <i class="fas fa-info-circle"></i> 
+                        Showing top {{ result.vulnerabilities|length }} vulnerabilities. 
+                        {{ result.vulnerabilities_truncated }} more vulnerabilities hidden for performance. 
+                        <a href="?max_vulns=500&{{ request.query_string.decode() }}" style="color: #856404;">Show more</a>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Show only first 20 vulnerabilities initially, with expand option -->
                     <div class="vulnerabilities-table">
                         <table class="vuln-table">
                             <thead>
@@ -1531,7 +1618,7 @@ data:
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for vuln in result.vulnerabilities %}
+                                {% for vuln in result.vulnerabilities[:20] %}
                                 <tr>
                                     <td><div class="vuln-id">{{ vuln.id }}</div></td>
                                     <td><span class="severity-badge severity-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
@@ -1570,6 +1657,14 @@ data:
                                 {% endfor %}
                             </tbody>
                         </table>
+                        
+                        {% if result.vulnerabilities|length > 20 %}
+                        <div style="text-align: center; padding: 15px; background: #f8f9fa;">
+                            <button class="expand-btn" onclick="showAllVulns(this)" style="background: #007bff; color: white; padding: 8px 16px; border-radius: 4px;">
+                                Show All {{ result.vulnerabilities|length }} Vulnerabilities
+                            </button>
+                        </div>
+                        {% endif %}
                     </div>
                     {% else %}
                     <div style="padding: 20px; text-align: center; color: #28a745;">
@@ -1580,6 +1675,42 @@ data:
                 </div>
                 {% endfor %}
             </div>
+
+            <!-- Pagination -->
+            {% if pagination.total_pages > 1 %}
+            <div style="background: white; border-radius: 12px; padding: 20px; margin-top: 25px; box-shadow: 0 5px 20px rgba(0,0,0,0.1);">
+                <div style="display: flex; justify-content: center; align-items: center; gap: 10px;">
+                    {% if pagination.has_prev %}
+                    <a href="?page={{ pagination.prev_page }}&{{ request.query_string.decode().replace('page=' + pagination.page|string, '') }}" 
+                       class="btn btn-secondary">
+                        <i class="fas fa-chevron-left"></i> Previous
+                    </a>
+                    {% endif %}
+                    
+                    <span style="padding: 10px 15px; background: #f8f9fa; border-radius: 6px;">
+                        Page {{ pagination.page }} of {{ pagination.total_pages }} 
+                        ({{ pagination.total }} images)
+                    </span>
+                    
+                    {% if pagination.has_next %}
+                    <a href="?page={{ pagination.next_page }}&{{ request.query_string.decode().replace('page=' + pagination.page|string, '') }}" 
+                       class="btn btn-secondary">
+                        Next <i class="fas fa-chevron-right"></i>
+                    </a>
+                    {% endif %}
+                </div>
+                
+                <div style="text-align: center; margin-top: 15px;">
+                    <label for="per_page" style="margin-right: 10px;">Images per page:</label>
+                    <select id="per_page" onchange="changePerPage()" style="padding: 5px;">
+                        <option value="5" {{ 'selected' if pagination.per_page == 5 else '' }}>5</option>
+                        <option value="10" {{ 'selected' if pagination.per_page == 10 else '' }}>10</option>
+                        <option value="20" {{ 'selected' if pagination.per_page == 20 else '' }}>20</option>
+                        <option value="50" {{ 'selected' if pagination.per_page == 50 else '' }}>50</option>
+                    </select>
+                </div>
+            </div>
+            {% endif %}
             {% else %}
             <div class="no-results">
                 {% if current_severity_filter != 'all' or current_image_filter %}
@@ -1667,6 +1798,74 @@ data:
                 if (selectedNamespace !== '{{ namespace }}') {
                     window.location.href = '/results/' + selectedNamespace;
                 }
+            }
+
+            // Pagination functions
+            function changePerPage() {
+                const perPage = document.getElementById('per_page').value;
+                const url = new URL(window.location);
+                url.searchParams.set('per_page', perPage);
+                url.searchParams.set('page', '1'); // Reset to first page
+                window.location.href = url.toString();
+            }
+
+            // Show all vulnerabilities for an image
+            function showAllVulns(button) {
+                const table = button.closest('.image-card').querySelector('.vuln-table tbody');
+                const imageCard = button.closest('.image-card');
+                
+                // Get image name from the card
+                const imageName = imageCard.querySelector('h3').textContent;
+                
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+                button.disabled = true;
+                
+                // Make AJAX request to get full vulnerabilities
+                fetch(`/api/image-vulnerabilities/{{ namespace }}?image=${encodeURIComponent(imageName)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        // Replace table content with all vulnerabilities
+                        let newRows = '';
+                        data.vulnerabilities.forEach(vuln => {
+                            newRows += `
+                                <tr>
+                                    <td><div class="vuln-id">${vuln.id}</div></td>
+                                    <td><span class="severity-badge severity-${vuln.severity}">${vuln.severity}</span></td>
+                                    <td>
+                                        <div class="package-info">${vuln.pkg}</div>
+                                        ${vuln.target ? `<small style="color: #666;">${vuln.target}</small>` : ''}
+                                    </td>
+                                    <td><span class="version-badge">${vuln.installed || 'N/A'}</span></td>
+                                    <td>
+                                        ${vuln.fixed ? 
+                                            `<span class="version-badge fixed-version">${vuln.fixed}</span>` : 
+                                            '<span style="color: #dc3545; font-size: 0.8rem;">Not Fixed</span>'}
+                                    </td>
+                                    <td>
+                                        ${vuln.cvss_score ? 
+                                            `<div style="display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #666;">
+                                                <i class="fas fa-chart-line"></i>
+                                                ${vuln.cvss_score.toFixed(1)}
+                                            </div>` : 
+                                            '<span style="color: #666;">N/A</span>'}
+                                    </td>
+                                    <td>
+                                        <div class="vuln-title">${vuln.title || 'No title available'}</div>
+                                        ${vuln.description ? 
+                                            `<button class="expand-btn" onclick="toggleDescription(this)">Show Description</button>
+                                            <div class="description-full">${vuln.description}</div>` : ''}
+                                    </td>
+                                </tr>
+                            `;
+                        });
+                        table.innerHTML = newRows;
+                        button.parentElement.remove(); // Remove the "Show All" button
+                    })
+                    .catch(error => {
+                        console.error('Failed to load vulnerabilities:', error);
+                        button.innerHTML = 'Failed to load - Try again';
+                        button.disabled = false;
+                    });
             }
         </script>
     </body>
