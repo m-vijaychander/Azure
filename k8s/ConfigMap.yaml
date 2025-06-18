@@ -12,6 +12,7 @@ data:
     import time
     import logging
     import sys
+    import pickle
     from datetime import datetime
     from kubernetes import client, config
     from flask import Flask, render_template, request, Response, redirect, url_for, jsonify
@@ -35,6 +36,10 @@ data:
     ACR_TENANT_ID = os.getenv('AZURE_TENANT_ID')
     ACR_REGISTRY_NAME = os.getenv('ACR_REGISTRY_NAME', 'azops')
 
+    # Data persistence configuration
+    DATA_DIRECTORY = os.getenv('DATA_DIRECTORY', '/data')
+    SCAN_RESULTS_FILE = os.path.join(DATA_DIRECTORY, 'scan_results.pkl')
+
     # Global variables
     acr_token = None
     token_expiry = None
@@ -42,6 +47,33 @@ data:
     scan_logs_by_namespace = {}
     scan_metadata_by_namespace = {}
     is_scanning_by_namespace = {}
+
+    def save_scan_results():
+        """Save only scan results to persistent storage"""
+        try:
+            os.makedirs(DATA_DIRECTORY, exist_ok=True)
+            with open(SCAN_RESULTS_FILE, 'wb') as f:
+                pickle.dump(scan_results_by_namespace, f)
+            logger.info("✅ Scan results saved to persistent storage")
+        except Exception as e:
+            logger.error(f"❌ Failed to save scan results: {e}")
+
+    def load_scan_results():
+        """Load only scan results from persistent storage"""
+        global scan_results_by_namespace
+        
+        try:
+            if os.path.exists(SCAN_RESULTS_FILE):
+                with open(SCAN_RESULTS_FILE, 'rb') as f:
+                    scan_results_by_namespace = pickle.load(f)
+                logger.info(f"✅ Loaded scan results for {len(scan_results_by_namespace)} namespaces")
+            else:
+                logger.info("📁 No existing scan results found - starting fresh")
+                scan_results_by_namespace = {}
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to load scan results: {e}")
+            scan_results_by_namespace = {}
 
     def setup_kubernetes():
         """Setup Kubernetes client for AKS"""
@@ -262,7 +294,7 @@ data:
         return result
 
     def scan_worker(namespace):
-        """Enhanced scan worker with logging"""
+        """Enhanced scan worker with results persistence"""
         global scan_results_by_namespace, scan_logs_by_namespace, scan_metadata_by_namespace, is_scanning_by_namespace
         
         logger.info(f"🚀 STARTING SCAN FOR NAMESPACE: {namespace}")
@@ -319,6 +351,7 @@ data:
                 message = f"No images found in namespace {namespace}"
                 add_log('WARNING', message)
                 scan_metadata_by_namespace[namespace]['status'] = 'completed'
+                save_scan_results()  # Save even if no images found
                 return
 
             add_log('INFO', f"Found {len(images)} images to scan ({acr_image_count} ACR images)")
@@ -411,6 +444,9 @@ data:
             final_msg = f"Scan completed! Images: {metadata['scanned_images']}/{metadata['total_images']}, Failed: {metadata['failed_images']}, ACR: {metadata['acr_images']}"
             add_log('INFO', final_msg)
             logger.info(f"🏁 [{namespace}] {final_msg}")
+            
+            # Save scan results to persistent storage
+            save_scan_results()
 
     @app.route("/", methods=["GET", "POST"])
     def index():
@@ -677,14 +713,19 @@ data:
         return jsonify({
             "status": "healthy", 
             "timestamp": datetime.now().isoformat(),
-            "acr_authenticated": is_acr_token_valid()
+            "acr_authenticated": is_acr_token_valid(),
+            "persistent_storage": os.path.exists(DATA_DIRECTORY),
+            "saved_namespaces": len(scan_results_by_namespace)
         })
 
     if __name__ == "__main__":
-        logger.info("🚀 Starting Enhanced Trivy UI Application for AKS")
+        logger.info("🚀 Starting Enhanced Trivy UI Application for AKS with Results Persistence")
         logger.info("🔐 ACR Configuration:")
         logger.info(f"   - Registry: {ACR_REGISTRY_NAME}")
         logger.info(f"   - Has credentials: {bool(ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID)}")
+        
+        # Load existing scan results on startup
+        load_scan_results()
         
         # Test ACR authentication on startup
         if ACR_CLIENT_ID and ACR_CLIENT_SECRET and ACR_TENANT_ID:
