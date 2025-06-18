@@ -97,6 +97,8 @@ spec:
         volumeMounts:
         - name: script-volume
           mountPath: /app
+        - name: results-volume
+          mountPath: /data
         resources:
           requests:
             memory: "2Gi"
@@ -136,4 +138,7 @@ spec:
         configMap:
           name: image-scanner-script
           defaultMode: 0755
+      - name: results-volume
+        persistentVolumeClaim:
+          claimName: scanner-results
       restartPolicy: Always
