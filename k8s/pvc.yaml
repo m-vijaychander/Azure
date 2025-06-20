@@ -1,11 +1,36 @@
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: scanner-results-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: azure-file-static
+  csi:
+    driver: file.csi.azure.com
+    readOnly: false
+    volumeHandle: scanner-results-volume  # unique volume handle
+    volumeAttributes:
+      shareName: scanner-results  # Your Azure Files share name
+    nodeStageSecretRef:
+      name: azure-files-secret
+      namespace: default
+
+---
+# Step 3: Create PersistentVolumeClaim for static PV
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: scanner-results
+  name: scanner-results-static
   namespace: default
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
+  storageClassName: azure-file-static
+  volumeName: scanner-results-pv
   resources:
     requests:
       storage: 5Gi
