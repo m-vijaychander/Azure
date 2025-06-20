@@ -97,7 +97,7 @@ spec:
         volumeMounts:
         - name: script-volume
           mountPath: /app
-        - name: results-volume
+        - name: trivy-persistent-storage
           mountPath: /data
         resources:
           requests:
@@ -138,7 +138,7 @@ spec:
         configMap:
           name: image-scanner-script
           defaultMode: 0755
-      - name: results-volume
+      - name: trivy-persistent-storage
         persistentVolumeClaim:
-          claimName: scanner-results
+          claimName: trivy-pv-claim
       restartPolicy: Always
